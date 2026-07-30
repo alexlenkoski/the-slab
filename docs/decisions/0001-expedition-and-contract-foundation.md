@@ -43,6 +43,12 @@ treatment, voluntarily join the Warden's force in a player-selected role.
 The Slab is a physical side-view location. Management interfaces are accessed
 through its people and command stations.
 
+The Warden's office contains a room-based camera system. Two optional-prisoner
+cells begin with cameras; further cameras must be purchased and installed by an
+assigned building team that physically travels to the room. The office can also
+issue remote orders, but each order requires a messenger to carry it through the
+Slab before guards or staff act on it.
+
 ## Consequences
 
 - Squad AI and command interpretation are core technical systems.
@@ -54,6 +60,10 @@ through its people and command stations.
   growth.
 - Optional capture must remain costly through personnel, time, food, cells and
   security so that capturing everyone is not an obvious optimal strategy.
+- Surveillance expansion consumes both money and building-team time.
+- Information and command are separate resources: a camera can reveal an
+  incident, but an available messenger and a traversable route are required to
+  deliver orders.
 
 ## Unresolved
 

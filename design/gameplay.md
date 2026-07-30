@@ -175,3 +175,30 @@ The player visits prison wings, the Brood Mother, staff and command stations.
 Focused interfaces at appropriate stations support workforce assignments,
 construction and other management tasks without turning the Slab into a
 disembodied menu.
+
+# Warden's Office and Surveillance
+
+The Warden may visit the Warden's office to monitor specific rooms through the
+Slab's camera system.
+
+The Slab begins with two camera-equipped prison cells intended for optional
+prisoners. Cameras for additional cells and important rooms must be purchased
+individually.
+
+Purchasing a camera does not install it immediately. The player must assign a
+building team to carry the equipment to the selected room and complete the
+installation. Until the work is finished, the room has no camera coverage.
+Blocked routes, unrest or danger along the way can delay the team and therefore
+delay access to surveillance.
+
+From the office, the Warden can use installed cameras to observe covered rooms
+in real time and prepare orders for guards or staff.
+
+Remote orders require messengers. The player must purchase or recruit messengers
+and assign an available messenger to deliver each order. Messengers physically
+travel through the prison, so distance, locked or damaged routes, riots and
+escaped prisoners can delay or prevent delivery. An order is not acted upon
+until its messenger reaches the intended recipient.
+
+Serious incidents may still require the Warden to leave the office and intervene
+personally.
