@@ -194,11 +194,60 @@ delay access to surveillance.
 From the office, the Warden can use installed cameras to observe covered rooms
 in real time and prepare orders for guards or staff.
 
+Basic cameras do not generate alerts. The player must visit the office and
+inspect camera feeds manually to discover incidents in monitored rooms. A later
+surveillance upgrade enables automatic alerts.
+
+Automatic detection reaches the Warden's office immediately, but does not notify
+the Warden globally. If the Warden is elsewhere, a messenger must carry the
+alert. During an expedition, the expedition messenger delivers it through the
+same reporting system used for other Slab emergencies.
+
+The Warden cannot view camera feeds remotely. After receiving an alert, the
+Warden may send a messenger to investigate the affected room and report what
+happened rather than returning to the office personally. The report is delayed
+by the messenger's physical journey and may be outdated by the time it arrives.
+
+Cameras can be damaged and disabled by prisoners or attackers. A building team
+must be assigned to reach and repair a disabled camera. Repairs cost no money,
+and the repaired camera retains all of its installed upgrades; the cost is the
+team's time and the risk of entering the affected room.
+
 Remote orders require messengers. The player must purchase or recruit messengers
 and assign an available messenger to deliver each order. Messengers physically
 travel through the prison, so distance, locked or damaged routes, riots and
 escaped prisoners can delay or prevent delivery. An order is not acted upon
 until its messenger reaches the intended recipient.
+
+Orders available from the Warden's office include:
+
+- Dispatch guards to a room.
+- Evacuate staff.
+- Lock or unlock doors.
+- Send a building team.
+- Move a prisoner.
+- Summon staff or messengers.
+- Sound a local alarm.
+- Declare High Alert.
+
+High Alert is a prison-wide emergency state. While it is active:
+
+- Nonessential doors lock.
+- Staff move toward safe rooms.
+- Guards abandon routine duties and respond to threats.
+- Messengers prioritize emergency orders.
+- Construction and ordinary work stop.
+
+Maintaining High Alert causes guard fatigue, delays work and increases prisoner
+tension. It is therefore an emergency measure rather than a safe default.
+
+Once declared at the Warden's office, High Alert activates immediately through a
+central mechanical alarm. Detailed follow-up instructions still require
+messengers to reach the appropriate guards or staff.
+
+If the Warden is away from the office, the Warden may send a messenger with
+authority to declare High Alert. Activation is delayed until that messenger
+physically reaches the office.
 
 Serious incidents may still require the Warden to leave the office and intervene
 personally.

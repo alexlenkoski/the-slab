@@ -47,7 +47,25 @@ The Warden's office contains a room-based camera system. Two optional-prisoner
 cells begin with cameras; further cameras must be purchased and installed by an
 assigned building team that physically travels to the room. The office can also
 issue remote orders, but each order requires a messenger to carry it through the
-Slab before guards or staff act on it.
+Slab before guards or staff act on it. Basic cameras must be inspected manually;
+a later surveillance upgrade enables automatic alerts. Damaged cameras require
+a building team to repair, but repairs cost no money and preserve all installed
+upgrades. Automatic detections arrive immediately at the office, but a messenger
+must carry the alert to a Warden who is elsewhere. Live feeds cannot be viewed
+remotely; the Warden may instead send a messenger to investigate and return with
+a delayed report.
+
+Office orders include dispatching guards, evacuating staff, controlling doors,
+sending building teams, moving prisoners, summoning personnel, sounding local
+alarms and declaring High Alert.
+
+High Alert applies to the entire prison. It locks nonessential doors, sends staff
+toward safety, redirects guards and messengers to emergency work, and suspends
+construction and ordinary work. Prolonged use causes guard fatigue, work delays
+and increased prisoner tension. It activates immediately through the office's
+central alarm, but detailed follow-up orders still require messengers.
+An absent Warden may authorize a messenger to declare High Alert, which delays
+activation until the messenger reaches the office.
 
 ## Consequences
 
