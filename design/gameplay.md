@@ -251,3 +251,21 @@ physically reaches the office.
 
 Serious incidents may still require the Warden to leave the office and intervene
 personally.
+
+# First Vertical Slice
+
+The first playable prototype validates one short end-to-end contract using one
+Department, one faction and one significant target. It includes direct Warden
+control, a three-member AI squad, all six squad orders, nonlethal capture, an
+optional prisoner, return transport, a physical Slab, basic preparation and a
+containment emergency.
+
+The emergency tests the central tradeoff directly. Guards assigned to the
+prisoner's cell protect containment but are unavailable to fight attackers.
+Capturing an optional faction prisoner reduces the attacking force, while also
+demonstrating the long-term value and burden of additional captures.
+
+Messenger delivery, concurrent off-screen Slab simulation and playable Citadel
+defense are deliberately deferred. The slice ends with a simplified handoff to
+the Memorium and reports payment, research and retaliation progress. These are
+prototype boundaries rather than changes to the intended full game loop.

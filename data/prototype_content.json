@@ -1,0 +1,24 @@
+{
+  "department": {
+    "name": "Department of Resonant Histories",
+    "curator": "Curator Pell",
+    "specialty": "Echo-bound anatomy"
+  },
+  "faction": {
+    "name": "The Mourning Choir",
+    "retaliation": 0
+  },
+  "contract": {
+    "title": "The Bell-Sworn Pilgrim",
+    "target": "Vey, the Bell-Sworn",
+    "payment": 180,
+    "danger": "Measured",
+    "containment": "A quiet cell; no open bells",
+    "research": "Resonance baffling"
+  },
+  "optional_prisoner": {
+    "name": "Choir Scout",
+    "payment": 45,
+    "attack_reduction": 1
+  }
+}
