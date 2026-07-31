@@ -91,6 +91,48 @@ The core squad commands are:
 Squad members interpret commands according to their roles, abilities and current
 situation.
 
+## Warden Combat
+
+The Warden is a defensive battlefield controller with access to biological
+abilities and containment tools. The Warden's attacks should help control space,
+protect the squad and create opportunities for capture.
+
+For the first prototype, the Warden has a single uniform punch. The punch is
+visibly directed forward and briefly stops the Warden's movement. It causes a
+small amount of knockback, with smaller enemies pushed farther than larger
+enemies. Its initial recovery time is 0.5 seconds and should be fine-tuned
+through playtesting.
+
+The Warden can punch while airborne. Doing so commits the Warden to falling
+toward the ground rather than allowing them to remain airborne.
+
+### Spit Attack
+
+The Warden's spit attack is a biological ability. The Warden briefly stops and
+spits along a fixed forward arc. If the spit lands on the ground, it creates a
+puddle. Enemies standing in the puddle build toward a stunned state. Larger
+enemies must remain in the puddle longer before being stunned. This buildup
+gradually decreases after an enemy leaves the puddle.
+
+Overlapping puddles do not increase the rate of stun buildup. If the spit
+strikes an enemy directly before landing, the spit is consumed and immediately
+stuns that enemy for three seconds instead of creating a puddle.
+
+After either outcome, the spit attack has a 10-second cooldown.
+
+## Guard Combat
+
+Guards do not leave their current position to initiate an attack unless they
+have received the Attack command. A guard struck by an enemy may retaliate
+against that enemy until the enemy is dead or captured. More detailed guard
+engagement and command behavior remains to be designed.
+
+The prototype will include two distinct melee guard types with separate combat
+roles. The first uses a swinging needle attack. The swing normally targets one
+enemy, but damages every enemy overlapping its attack area. It deals damage
+without applying knockback. The second melee guard's role and attack remain to
+be defined.
+
 # Living World During Expeditions
 
 The Slab continues operating while the Warden is away. Threats and prison events
@@ -256,9 +298,9 @@ personally.
 
 The first playable prototype validates one short end-to-end contract using one
 Department, one faction and one significant target. It includes direct Warden
-control, a two-member AI squad, all six squad orders, nonlethal capture, an
-optional prisoner, return transport, a physical Slab, basic preparation and a
-containment emergency.
+control, two distinct melee guard types in the AI squad, all six squad orders,
+nonlethal capture, an optional prisoner, return transport, a physical Slab,
+basic preparation and a containment emergency.
 
 During ordinary travel, the two squad members maintain readable spacing behind
 the Warden. Once the primary target is bound, the squad forms around the
