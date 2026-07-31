@@ -23,6 +23,7 @@ func _run() -> void:
 	_check(InputMap.has_action("spit"), "spit input was not registered")
 	_check(game.squad.size() == 2, "prototype expedition should begin with two squad members")
 	_check(game.squad[0].role == "NEEDLE", "first squad member was not the needle guard")
+	_check(game.squad[1].role == "ACID_SPITTER", "second squad member was not the Acid Spitter")
 
 	game.target.captured = true
 	game.target.pos = Vector2(1000, game.GROUND_Y)
@@ -63,6 +64,34 @@ func _run() -> void:
 	game._needle_guard_attack(game.squad[0])
 	_check(game.target.health == 86.0 and game.scout.health == 34.0, "needle swing did not cleave overlapping enemies")
 	_check(game.target.pos.x == 700.0 and game.scout.pos.x == 710.0, "needle swing incorrectly applied knockback")
+
+	var acid_spitter: Dictionary = game.squad[1]
+	acid_spitter.pos = Vector2(400, game.GROUND_Y)
+	acid_spitter.attack_cooldown = 0.0
+	game.target.pos = Vector2(500, game.GROUND_Y)
+	game.order = game.Order.ATTACK
+	game._update_squad(0.1)
+	_check(acid_spitter.pos.x < 400.0, "Acid Spitter did not fall back from a close target")
+
+	game.acid_projectiles.clear()
+	acid_spitter.pos = Vector2(400, game.GROUND_Y)
+	acid_spitter.hold_x = 400.0
+	acid_spitter.attack_cooldown = 0.0
+	game.target.pos = Vector2(650, game.GROUND_Y)
+	game.order = game.Order.DEFEND
+	game._update_squad(0.1)
+	_check(acid_spitter.pos.x == 400.0, "Acid Spitter left its fixed Defend position")
+	_check(game.acid_projectiles.size() == 1, "Acid Spitter did not fire at a target in Defend range")
+
+	game.target.health = 100.0
+	game.target.acid_duration = 0.0
+	game.target.acid_tick = 0.0
+	for hit in 10:
+		game._apply_acid_hit(game.target)
+	_check(game.target.acid_duration == 8.0, "repeated acid hits did not cap duration at eight seconds")
+	_check(game.target.health == 60.0, "acid impact damage did not remain weak and constant")
+	game._update_acid_effects(0.25, [game.target])
+	_check(game.target.health == 58.0, "acid did not apply its fixed tick damage")
 
 	game.spit_projectiles.clear()
 	game.player.pos = Vector2(500, game.GROUND_Y)

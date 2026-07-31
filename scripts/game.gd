@@ -33,6 +33,17 @@ const DIRECT_SPIT_STUN := 3.0
 const NEEDLE_DAMAGE := 14.0
 const NEEDLE_RANGE := 76.0
 const NEEDLE_COOLDOWN := 0.9
+const ACID_IMPACT_DAMAGE := 4.0
+const ACID_TICK_DAMAGE := 2.0
+const ACID_TICK_INTERVAL := 0.25
+const ACID_DURATION_PER_HIT := 1.0
+const ACID_MAX_DURATION := 8.0
+const ACID_SPIT_COOLDOWN := 1.4
+const ACID_SPIT_SPEED := Vector2(340.0, -240.0)
+const ACID_SPIT_GRAVITY := 720.0
+const ACID_MIN_RANGE := 145.0
+const ACID_PREFERRED_RANGE := 225.0
+const ACID_MAX_RANGE := 275.0
 
 enum Phase { BRIEFING, EXPEDITION, SLAB, OUTCOME }
 enum Order { FOLLOW, HOLD, ATTACK, DEFEND, RESTRAIN, RETREAT }
@@ -51,9 +62,10 @@ var punch_flash := 0.0
 var invulnerable := 0.0
 var spit_projectiles: Array[Dictionary] = []
 var spit_puddles: Array[Dictionary] = []
+var acid_projectiles: Array[Dictionary] = []
 
-var target := {"pos": Vector2(2050, GROUND_Y), "health": 100.0, "max_health": 100.0, "captured": false, "stun": 0.0, "size": 2.0, "puddle_stun": 0.0}
-var scout := {"pos": Vector2(1120, GROUND_Y), "health": 48.0, "captured": false, "active": true, "stun": 0.0, "size": 1.0, "puddle_stun": 0.0}
+var target := {"pos": Vector2(2050, GROUND_Y), "health": 100.0, "max_health": 100.0, "captured": false, "stun": 0.0, "size": 2.0, "puddle_stun": 0.0, "acid_duration": 0.0, "acid_tick": 0.0}
+var scout := {"pos": Vector2(1120, GROUND_Y), "health": 48.0, "captured": false, "active": true, "stun": 0.0, "size": 1.0, "puddle_stun": 0.0, "acid_duration": 0.0, "acid_tick": 0.0}
 var capture_progress := 0.0
 var camp_progress := 0.0
 var expedition_message := "Reach Vey alive. The squad awaits your word."
@@ -141,7 +153,7 @@ func _bind_axis(action: StringName, axis, value: float) -> void:
 func _reset_squad() -> void:
 	squad = [
 		{"pos": Vector2(115, GROUND_Y), "role": "NEEDLE", "health": 70.0, "hold_x": 115.0, "facing": 1.0, "attack_cooldown": 0.0, "attack_flash": 0.0},
-		{"pos": Vector2(85, GROUND_Y), "role": "BINDER", "health": 65.0, "hold_x": 85.0, "facing": 1.0, "attack_cooldown": 0.0, "attack_flash": 0.0}
+		{"pos": Vector2(85, GROUND_Y), "role": "ACID_SPITTER", "health": 65.0, "hold_x": 85.0, "facing": 1.0, "attack_cooldown": 0.0, "attack_flash": 0.0}
 	]
 
 
@@ -194,6 +206,10 @@ func _read_orders() -> void:
 		if order == Order.HOLD:
 			for member in squad:
 				member.hold_x = member.pos.x
+		if order == Order.DEFEND:
+			for member in squad:
+				if member.role == "ACID_SPITTER":
+					member.hold_x = member.pos.x
 
 
 func _move_player(delta: float, left_bound: float, right_bound: float) -> void:
@@ -218,6 +234,8 @@ func _update_expedition(delta: float) -> void:
 	_move_player(delta, 45.0, WORLD_END)
 	_read_orders()
 	_update_spit(delta, [target, scout])
+	_update_acid_projectiles(delta, [target, scout])
+	_update_acid_effects(delta, [target, scout])
 	_update_squad(delta)
 	_update_enemy(target, delta, true)
 	if scout.active:
@@ -352,6 +370,56 @@ func _update_spit(delta: float, enemies: Array = [target, scout]) -> void:
 			enemy.puddle_stun = maxf(0.0, float(enemy.puddle_stun) - delta * 0.5)
 
 
+func _fire_acid_spit(member: Dictionary, enemy: Dictionary) -> void:
+	member.attack_cooldown = ACID_SPIT_COOLDOWN
+	member.attack_flash = 0.18
+	member.facing = signf(enemy.pos.x - member.pos.x)
+	acid_projectiles.append({
+		"pos": member.pos + Vector2(member.facing * 24.0, -50.0),
+		"vel": Vector2(ACID_SPIT_SPEED.x * member.facing, ACID_SPIT_SPEED.y)
+	})
+
+
+func _update_acid_projectiles(delta: float, enemies: Array) -> void:
+	for index in range(acid_projectiles.size() - 1, -1, -1):
+		var projectile := acid_projectiles[index]
+		projectile.vel.y += ACID_SPIT_GRAVITY * delta
+		projectile.pos += projectile.vel * delta
+		var hit_enemy := false
+		for enemy in enemies:
+			if not bool(enemy.get("active", true)) or bool(enemy.get("captured", false)) or float(enemy.get("health", 0.0)) <= 0.0:
+				continue
+			var center: Vector2 = enemy.pos + Vector2(0.0, -34.0)
+			if projectile.pos.distance_to(center) <= 34.0:
+				_apply_acid_hit(enemy)
+				hit_enemy = true
+				break
+		if hit_enemy or projectile.pos.y >= GROUND_Y or projectile.pos.x < 0.0 or projectile.pos.x > WORLD_END:
+			# Missed acid is spent on the ground and never creates a puddle.
+			acid_projectiles.remove_at(index)
+
+
+func _apply_acid_hit(enemy: Dictionary) -> void:
+	enemy.health = maxf(1.0, float(enemy.health) - ACID_IMPACT_DAMAGE)
+	enemy.acid_duration = minf(ACID_MAX_DURATION, float(enemy.get("acid_duration", 0.0)) + ACID_DURATION_PER_HIT)
+	if float(enemy.get("acid_tick", 0.0)) <= 0.0:
+		enemy.acid_tick = ACID_TICK_INTERVAL
+
+
+func _update_acid_effects(delta: float, enemies: Array) -> void:
+	for enemy in enemies:
+		if bool(enemy.get("captured", false)) or float(enemy.get("acid_duration", 0.0)) <= 0.0:
+			continue
+		var active_time := minf(delta, float(enemy.acid_duration))
+		enemy.acid_duration = maxf(0.0, float(enemy.acid_duration) - delta)
+		enemy.acid_tick = float(enemy.acid_tick) - active_time
+		while enemy.acid_tick <= 0.0:
+			enemy.health = maxf(1.0, float(enemy.health) - ACID_TICK_DAMAGE)
+			enemy.acid_tick += ACID_TICK_INTERVAL
+		if enemy.acid_duration <= 0.0:
+			enemy.acid_tick = 0.0
+
+
 func _update_enemy(enemy: Dictionary, delta: float, is_target: bool) -> void:
 	if enemy.captured:
 		return
@@ -383,19 +451,30 @@ func _update_squad(delta: float) -> void:
 			continue
 		var destination: float = member.pos.x
 		match order:
-			Order.FOLLOW, Order.DEFEND:
+			Order.FOLLOW:
 				if target.captured:
-					# Ward leads the prisoner and Binder closes the formation behind.
+					# One guard leads the prisoner and the other closes the formation.
 					var escort_side := 1.0 if index == 0 else -1.0
 					destination = target.pos.x + player.facing * ESCORT_GUARD_OFFSET * escort_side
 				else:
 					destination = player.pos.x - player.facing * (
 						SQUAD_FOLLOW_FIRST_OFFSET + index * SQUAD_FOLLOW_SPACING
 					)
+			Order.DEFEND:
+				if member.role == "ACID_SPITTER":
+					destination = member.hold_x
+				else:
+					destination = player.pos.x - player.facing * SQUAD_FOLLOW_FIRST_OFFSET
 			Order.HOLD:
 				destination = member.hold_x
 			Order.ATTACK:
-				destination = target.pos.x + (-45.0 + index * 35.0)
+				if member.role == "ACID_SPITTER":
+					var target_direction := signf(target.pos.x - member.pos.x)
+					if target_direction == 0.0:
+						target_direction = member.facing
+					destination = target.pos.x - target_direction * ACID_PREFERRED_RANGE
+				else:
+					destination = target.pos.x - 45.0
 			Order.RESTRAIN:
 				destination = target.pos.x + (-42.0 if index % 2 == 0 else 42.0)
 			Order.RETREAT:
@@ -407,6 +486,31 @@ func _update_squad(delta: float) -> void:
 			member.facing = signf(target.pos.x - member.pos.x)
 			if absf(member.pos.x - target.pos.x) <= NEEDLE_RANGE and member.attack_cooldown <= 0.0:
 				_needle_guard_attack(member)
+		if member.role == "ACID_SPITTER" and member.attack_cooldown <= 0.0:
+			var acid_target: Dictionary = {}
+			if order == Order.ATTACK and not target.captured:
+				var attack_distance := absf(target.pos.x - member.pos.x)
+				if attack_distance >= ACID_MIN_RANGE and attack_distance <= ACID_MAX_RANGE:
+					acid_target = target
+			elif order == Order.DEFEND:
+				acid_target = _acid_defend_target(member)
+			if not acid_target.is_empty():
+				_fire_acid_spit(member, acid_target)
+
+
+func _acid_defend_target(member: Dictionary) -> Dictionary:
+	var nearest: Dictionary = {}
+	var nearest_distance := INF
+	for enemy in [target, scout]:
+		if enemy == scout and not scout.active:
+			continue
+		if enemy.captured or enemy.health <= 1.0:
+			continue
+		var distance := absf(enemy.pos.x - member.pos.x)
+		if distance <= ACID_MAX_RANGE and distance < nearest_distance:
+			nearest = enemy
+			nearest_distance = distance
+	return nearest
 
 
 func _needle_guard_attack(member: Dictionary) -> void:
@@ -651,6 +755,8 @@ func _draw_expedition() -> void:
 		draw_ellipse(puddle_pos, SPIT_PUDDLE_RADIUS, 10.0, Color(0.49, 0.68, 0.58, 0.68))
 	for projectile in spit_projectiles:
 		draw_circle(projectile.pos - Vector2(cam, 0.0), 9.0, Color("91bea3"))
+	for projectile in acid_projectiles:
+		draw_circle(projectile.pos - Vector2(cam, 0.0), 7.0, Color("b7d65b"))
 	_draw_camp(Vector2(145-cam, GROUND_Y))
 	if scout.active: _draw_enemy(scout.pos - Vector2(cam, 0), scout.health / 48.0, false)
 	_draw_enemy(target.pos - Vector2(cam, 0), target.health / target.max_health, true)
@@ -804,12 +910,18 @@ func _draw_squad_member(pos: Vector2, role: String, facing: float, attack_flash:
 			draw_line(pos + Vector2(facing * 8.0, -34.0), pos + Vector2(facing * 54.0, -15.0), Color("d9bd83"), 4.0)
 			if attack_flash > 0.0:
 				draw_arc(pos + Vector2(facing * 18.0, -28.0), 58.0, -1.25 if facing > 0.0 else 1.9, 1.25 if facing > 0.0 else 4.4, 18, Color("e8d9ae"), 5.0)
+		elif role == "ACID_SPITTER":
+			draw_circle(pos + Vector2(facing * 25.0, -48.0), 5.0, Color("b7d65b"))
+			if attack_flash > 0.0:
+				draw_line(pos + Vector2(facing * 28.0, -48.0), pos + Vector2(facing * 48.0, -53.0), Color("d5ed83"), 4.0)
 		return
 	draw_circle(pos + Vector2(0,-25), 12, Color("8ca4a0"))
 	draw_rect(Rect2(pos+Vector2(-14,-13), Vector2(28,35)), Color("405159"))
 	_text(role.substr(0,1), pos+Vector2(-5,5), 12, Color("d9bd83"))
 	if role == "NEEDLE":
 		draw_line(pos + Vector2(facing * 8.0, -28.0), pos + Vector2(facing * 50.0, -10.0), Color("d9bd83"), 4.0)
+	elif role == "ACID_SPITTER":
+		draw_circle(pos + Vector2(facing * 20.0, -32.0), 5.0, Color("b7d65b"))
 
 
 func _draw_enemy(pos: Vector2, ratio: float, primary: bool, show_health: bool = true) -> void:

@@ -50,7 +50,9 @@ standing close.
 The Warden's punch is a short forward strike. Spit travels in a fixed arc: a
 direct hit stuns an enemy, while a miss leaves a puddle that builds stun over
 time. The needle guard attacks after receiving the Attack order and can strike
-multiple overlapping enemies with one swing.
+multiple overlapping enemies with one swing. The Acid Spitter seeks ranged
+distance under the Attack order, holds position under Defend, and applies an
+extendable damage-over-time effect with its fixed-arc shot.
 
 All visuals are original placeholders. The Warden and guards use
 repository-owned PNG artwork; remaining visuals are drawn by the game code. The
