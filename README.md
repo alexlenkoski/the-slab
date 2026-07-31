@@ -46,8 +46,9 @@ contract target becomes vulnerable to restraint at low health. Issue Restrain,
 bring at least two living squad members to the target, then hold Interact while
 standing close.
 
-All visuals are original geometric placeholders drawn by the game code. The
-prototype requires no imported art, fonts, audio, or third-party add-ons.
+All visuals are original placeholders. The Warden and guards use
+repository-owned PNG artwork; remaining visuals are drawn by the game code. The
+prototype requires no external fonts, audio, or third-party add-ons.
 
 ### Prototype boundaries
 

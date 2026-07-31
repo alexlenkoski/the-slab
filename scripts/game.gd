@@ -1,7 +1,7 @@
 extends Node2D
 
-# A dependency-free vertical slice. Geometry, animation, and UI are drawn in code
-# so the prototype can be opened without importing external assets.
+# A dependency-free vertical slice. Character textures live in the repository;
+# remaining geometry, animation, and UI are drawn in code.
 
 const VIEW := Vector2(1280.0, 720.0)
 const GROUND_Y := 590.0
@@ -9,6 +9,17 @@ const WORLD_END := 2520.0
 const PLAYER_SPEED := 285.0
 const JUMP_SPEED := 610.0
 const GRAVITY := 1650.0
+const WARDEN_TEXTURE_PATH := "res://assets/characters/warden.png"
+const WARDEN_DRAW_HEIGHT := 96.0
+const GUARD_TEXTURE_PATH := "res://assets/characters/guard.png"
+const GUARD_DRAW_HEIGHT := 82.0
+const SQUAD_FOLLOW_FIRST_OFFSET := 70.0
+const SQUAD_FOLLOW_SPACING := 115.0
+const ESCORT_PRISONER_OFFSET := 150.0
+const ESCORT_GUARD_OFFSET := 75.0
+const ESCORT_MINIMUM_LEAD := 55.0
+const VEY_ESCAPE_SPEED := 260.0
+const VEY_ESCAPE_EXIT_X := 1325.0
 
 enum Phase { BRIEFING, EXPEDITION, SLAB, OUTCOME }
 enum Order { FOLLOW, HOLD, ATTACK, DEFEND, RESTRAIN, RETREAT }
@@ -36,15 +47,22 @@ var emergency_resolved := false
 var emergency_delay := 3.0
 var cell_integrity := 100.0
 var raiders: Array[Dictionary] = []
+var vey_escaped := false
 var slab_message := "The prisoner is restless. Tend the Slab before departure."
 var coins := 20
 var result := {}
 var elapsed := 0.0
+var warden_texture: Texture2D
+var guard_texture: Texture2D
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_setup_input()
+	if ResourceLoader.exists(WARDEN_TEXTURE_PATH):
+		warden_texture = load(WARDEN_TEXTURE_PATH) as Texture2D
+	if ResourceLoader.exists(GUARD_TEXTURE_PATH):
+		guard_texture = load(GUARD_TEXTURE_PATH) as Texture2D
 	var file := FileAccess.open("res://data/prototype_content.json", FileAccess.READ)
 	if file:
 		content = JSON.parse_string(file.get_as_text())
@@ -102,9 +120,8 @@ func _bind_axis(action: StringName, axis, value: float) -> void:
 
 func _reset_squad() -> void:
 	squad = [
-		{"pos": Vector2(115, GROUND_Y), "role": "WARD", "health": 70.0, "hold_x": 115.0},
-		{"pos": Vector2(85, GROUND_Y), "role": "BINDER", "health": 65.0, "hold_x": 85.0},
-		{"pos": Vector2(55, GROUND_Y), "role": "LANTERN", "health": 55.0, "hold_x": 55.0}
+		{"pos": Vector2(115, GROUND_Y), "role": "WARD", "health": 70.0, "hold_x": 115.0, "facing": 1.0},
+		{"pos": Vector2(85, GROUND_Y), "role": "BINDER", "health": 65.0, "hold_x": 85.0, "facing": 1.0}
 	]
 
 
@@ -212,7 +229,9 @@ func _update_expedition(delta: float) -> void:
 			expedition_message = "Vey falters. Order RESTRAIN and bring two squad members close."
 
 	if target.captured:
-		target.pos = target.pos.lerp(player.pos + Vector2(-55.0 * player.facing, 0), minf(1.0, delta * 5.0))
+		var escort_position: Vector2 = player.pos + Vector2(-ESCORT_PRISONER_OFFSET * player.facing, 0)
+		var proposed_position: Vector2 = target.pos.lerp(escort_position, minf(1.0, delta * 5.0))
+		target.pos = _limit_prisoner_to_forward_guard(proposed_position)
 		if player.pos.x < 235.0:
 			camp_progress = minf(1.0, camp_progress + delta / 1.0)
 			if camp_progress >= 1.0:
@@ -269,7 +288,14 @@ func _update_squad(delta: float) -> void:
 		var destination: float = member.pos.x
 		match order:
 			Order.FOLLOW, Order.DEFEND:
-				destination = player.pos.x - player.facing * (55.0 + index * 34.0)
+				if target.captured:
+					# Ward leads the prisoner and Binder closes the formation behind.
+					var escort_side := 1.0 if index == 0 else -1.0
+					destination = target.pos.x + player.facing * ESCORT_GUARD_OFFSET * escort_side
+				else:
+					destination = player.pos.x - player.facing * (
+						SQUAD_FOLLOW_FIRST_OFFSET + index * SQUAD_FOLLOW_SPACING
+					)
 			Order.HOLD:
 				destination = member.hold_x
 			Order.ATTACK:
@@ -278,10 +304,28 @@ func _update_squad(delta: float) -> void:
 				destination = target.pos.x + (-42.0 if index % 2 == 0 else 42.0)
 			Order.RETREAT:
 				destination = 150.0 + index * 34.0
+		if absf(destination - member.pos.x) > 0.5:
+			member.facing = signf(destination - member.pos.x)
 		member.pos.x = move_toward(member.pos.x, destination, 215.0 * delta)
 		if order == Order.ATTACK and absf(member.pos.x - target.pos.x) < 70.0 and target.health > 35.0:
 			target.health = maxf(1.0, target.health - 10.0 * delta)
 			target.stun = 0.08
+
+
+func _limit_prisoner_to_forward_guard(proposed_position: Vector2) -> Vector2:
+	var travel_direction: float = player.facing
+	var forward_guard_progress := -INF
+	for member in squad:
+		if member.health > 0.0:
+			forward_guard_progress = maxf(forward_guard_progress, member.pos.x * travel_direction)
+	if forward_guard_progress == -INF:
+		return proposed_position
+
+	var maximum_prisoner_progress := forward_guard_progress - ESCORT_MINIMUM_LEAD
+	var proposed_progress := proposed_position.x * travel_direction
+	if proposed_progress > maximum_prisoner_progress:
+		proposed_position.x = maximum_prisoner_progress * travel_direction
+	return proposed_position
 
 
 func _enter_slab() -> void:
@@ -353,6 +397,10 @@ func _start_emergency() -> void:
 
 
 func _update_emergency(delta: float) -> void:
+	if vey_escaped:
+		_update_vey_escape(delta)
+		return
+
 	var living := 0
 	for raider in raiders:
 		if raider.health <= 0.0:
@@ -384,22 +432,46 @@ func _update_emergency(delta: float) -> void:
 		cell_integrity = minf(100.0, cell_integrity + 18.0)
 		slab_message = "The Warden braces the bindings. The cell holds a little longer."
 
+	if cell_integrity <= 0.0:
+		_release_vey()
+		return
 	if living == 0:
 		emergency_resolved = true
 		slab_message = "The breach is quiet. Take Vey east when you are ready."
-	if cell_integrity <= 0.0:
-		cell_integrity = 35.0
-		player.health = maxf(15.0, player.health - 25.0)
-		for raider in raiders:
-			raider.health = 0.0
-		emergency_resolved = true
-		slab_message = "Vey nearly escaped. The Warden chose injury over losing the prisoner."
+
+
+func _release_vey() -> void:
+	cell_integrity = 0.0
+	vey_escaped = true
+	target.captured = false
+	target.pos = Vector2(970.0, GROUND_Y)
+	player.health = maxf(15.0, player.health - 25.0)
+	for raider in raiders:
+		raider.health = 0.0
+	slab_message = "The bars give way. Vey runs for the east breach."
+
+
+func _update_vey_escape(delta: float) -> void:
+	target.pos.x += VEY_ESCAPE_SPEED * delta
+	if target.pos.x >= VEY_ESCAPE_EXIT_X:
+		_finish_escape()
+
+
+func _finish_escape() -> void:
+	phase = Phase.OUTCOME
+	result = {
+		"escaped": true,
+		"payment": 0,
+		"cell": 0,
+		"scout": scout.captured
+	}
 
 
 func _finish_prototype() -> void:
 	phase = Phase.OUTCOME
 	var payment: int = int(content.contract.payment) + (int(content.optional_prisoner.payment) if scout.captured else 0)
 	result = {
+		"escaped": false,
 		"payment": payment,
 		"cell": roundi(cell_integrity),
 		"scout": scout.captured,
@@ -456,7 +528,8 @@ func _draw_expedition() -> void:
 	_draw_camp(Vector2(145-cam, GROUND_Y))
 	if scout.active: _draw_enemy(scout.pos - Vector2(cam, 0), scout.health / 48.0, false)
 	_draw_enemy(target.pos - Vector2(cam, 0), target.health / target.max_health, true)
-	for member in squad: _draw_squad_member(member.pos - Vector2(cam, 0), member.role)
+	for member in squad:
+		_draw_squad_member(member.pos - Vector2(cam, 0), member.role, member.facing)
 	_draw_warden(player.pos - Vector2(cam, 0))
 	_draw_hud("EXPEDITION · THE HUSHED GALLERIES", expedition_message)
 	_draw_order_bar()
@@ -477,7 +550,9 @@ func _draw_slab() -> void:
 	_text("BROOD", Vector2(205, 385), 15, Color("b79b8e"))
 	draw_rect(Rect2(555, 510, 150, 75), Color("384147")); _text("GUARD DESK", Vector2(567, 495), 14, Color("91a0a1"))
 	draw_rect(Rect2(895, 340, 150, 250), Color("252b30"), true)
-	for x in range(910, 1040, 24): draw_line(Vector2(x, 350), Vector2(x, 580), Color("7a8580"), 4)
+	if vey_escaped:
+		_draw_enemy(target.pos, target.health / target.max_health, true, false)
+	_draw_cell_bars()
 	_text("VEY", Vector2(952, 320), 15, Color("d6bd8b"))
 	draw_rect(Rect2(1160, 250, 85, 340), Color("30383b")); _text("EAST", Vector2(1175, 230), 14)
 	for raider in raiders:
@@ -492,6 +567,9 @@ func _draw_slab() -> void:
 
 
 func _draw_outcome() -> void:
+	if result.get("escaped", false):
+		_draw_escape_outcome()
+		return
 	draw_circle(Vector2(640, 295), 195, Color("213037"))
 	draw_circle(Vector2(640, 295), 148, Color("11141d"), false, 4)
 	_title("PRESERVED", Vector2(525, 110), 35)
@@ -504,6 +582,38 @@ func _draw_outcome() -> void:
 	_text("The Mourning Choir is diminished—but now it knows the Slab.", Vector2(335, 535), 18, Color("b9c7bf"))
 	_text("Retaliation rises to I", Vector2(520, 570), 17, Color("bd8175"))
 	_prompt("E / B  BEGIN AGAIN", Vector2(520, 650))
+
+
+func _draw_escape_outcome() -> void:
+	draw_circle(Vector2(640, 295), 195, Color("32252a"))
+	draw_circle(Vector2(640, 295), 148, Color("11141d"), false, 4)
+	_title("CONTAINMENT BROKEN", Vector2(455, 110), 35)
+	_text("Vey, the Bell-Sworn", Vector2(515, 176), 25, Color("d79b8f"))
+	_text("has fled alive into Pharloom.", Vector2(490, 215), 19)
+	_text("Payment", Vector2(390, 355), 16, Color("74878d")); _text("0 shell", Vector2(610, 355), 20)
+	_text("Preservation", Vector2(390, 392), 16, Color("74878d")); _text("not completed", Vector2(610, 392), 20)
+	_text("Optional prisoner", Vector2(390, 429), 16, Color("74878d")); _text("secured" if result.scout else "left free", Vector2(610, 429), 20)
+	_text("The Choir bought Vey a road into the dark.", Vector2(440, 520), 18, Color("b9c7bf"))
+	_text("The target remains alive—and at large.", Vector2(460, 557), 17, Color("bd8175"))
+	_prompt("E / B  BEGIN AGAIN", Vector2(520, 650))
+
+
+func _draw_cell_bars() -> void:
+	if not vey_escaped:
+		for x in range(910, 1040, 24):
+			draw_line(Vector2(x, 350), Vector2(x, 580), Color("7a8580"), 4)
+		return
+
+	# Split and offset the center bars to leave a visibly broken opening.
+	for index in range(6):
+		var x := 910.0 + index * 24.0
+		if index == 0 or index == 5:
+			draw_line(Vector2(x, 350), Vector2(x + (5.0 if index == 0 else -5.0), 580), Color("626b68"), 4)
+			continue
+		var bend := -13.0 if index % 2 == 0 else 11.0
+		var break_y := 425.0 + (index % 3) * 13.0
+		draw_line(Vector2(x, 350), Vector2(x + bend, break_y), Color("7a8580"), 4)
+		draw_line(Vector2(x - bend * 0.7, break_y + 42.0), Vector2(x + bend * 1.4, 580), Color("626b68"), 4)
 
 
 func _draw_hud(location: String, message: String) -> void:
@@ -525,18 +635,42 @@ func _draw_order_bar() -> void:
 func _draw_warden(pos: Vector2) -> void:
 	var blink := invulnerable > 0.0 and int(elapsed * 15.0) % 2 == 0
 	if blink: return
+	if warden_texture:
+		var texture_size := warden_texture.get_size()
+		var draw_width := WARDEN_DRAW_HEIGHT * texture_size.x / texture_size.y
+		# The source artwork faces left, so invert it when the Warden faces right.
+		draw_set_transform(pos, 0.0, Vector2(-player.facing, 1.0))
+		draw_texture_rect(
+			warden_texture,
+			Rect2(-draw_width / 2.0, -WARDEN_DRAW_HEIGHT + 24.0, draw_width, WARDEN_DRAW_HEIGHT),
+			false
+		)
+		draw_set_transform(Vector2.ZERO)
+		return
 	draw_circle(pos + Vector2(0, -36), 17, Color("c4d5cc"))
 	draw_polygon(PackedVector2Array([pos+Vector2(-20,-20), pos+Vector2(20,-20), pos+Vector2(27,22), pos+Vector2(-27,22)]), PackedColorArray([Color("526a70")]))
 	draw_line(pos+Vector2(player.facing*10,-20), pos+Vector2(player.facing*39,3), Color("d8c190"), 5)
 
 
-func _draw_squad_member(pos: Vector2, role: String) -> void:
+func _draw_squad_member(pos: Vector2, role: String, facing: float) -> void:
+	if guard_texture:
+		var texture_size := guard_texture.get_size()
+		var draw_width := GUARD_DRAW_HEIGHT * texture_size.x / texture_size.y
+		# The source artwork faces left, so invert it when a guard faces right.
+		draw_set_transform(pos, 0.0, Vector2(-facing, 1.0))
+		draw_texture_rect(
+			guard_texture,
+			Rect2(-draw_width / 2.0, -GUARD_DRAW_HEIGHT + 24.0, draw_width, GUARD_DRAW_HEIGHT),
+			false
+		)
+		draw_set_transform(Vector2.ZERO)
+		return
 	draw_circle(pos + Vector2(0,-25), 12, Color("8ca4a0"))
 	draw_rect(Rect2(pos+Vector2(-14,-13), Vector2(28,35)), Color("405159"))
 	_text(role.substr(0,1), pos+Vector2(-5,5), 12, Color("d9bd83"))
 
 
-func _draw_enemy(pos: Vector2, ratio: float, primary: bool) -> void:
+func _draw_enemy(pos: Vector2, ratio: float, primary: bool, show_health: bool = true) -> void:
 	if primary and target.captured:
 		draw_circle(pos+Vector2(0,-25), 22, Color("716051"))
 		draw_line(pos+Vector2(-24,-15), pos+Vector2(24,15), Color("d9bd83"), 3)
@@ -544,7 +678,8 @@ func _draw_enemy(pos: Vector2, ratio: float, primary: bool) -> void:
 	var color := Color("805e63") if primary else Color("665872")
 	draw_circle(pos+Vector2(0,-34), 25 if primary else 17, color)
 	draw_polygon(PackedVector2Array([pos+Vector2(-29,-15),pos+Vector2(29,-15),pos+Vector2(20,24),pos+Vector2(-20,24)]), PackedColorArray([color.darkened(0.18)]))
-	_bar(pos+Vector2(-32,-82), Vector2(64,6), ratio, Color("b98474"), "")
+	if show_health:
+		_bar(pos+Vector2(-32,-82), Vector2(64,6), ratio, Color("b98474"), "")
 
 
 func _draw_raider(pos: Vector2) -> void:
