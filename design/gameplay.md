@@ -127,11 +127,29 @@ have received the Attack command. A guard struck by an enemy may retaliate
 against that enemy until the enemy is dead or captured. More detailed guard
 engagement and command behavior remains to be designed.
 
-The prototype will include two distinct melee guard types with separate combat
-roles. The first uses a swinging needle attack. The swing normally targets one
-enemy, but damages every enemy overlapping its attack area. It deals damage
-without applying knockback. The second melee guard's role and attack remain to
-be defined.
+The prototype includes two distinct guard types with separate combat roles.
+
+### Needle Guard
+
+The Needle Guard is a melee guard that uses a swinging needle attack. The swing
+normally targets one enemy, but damages every enemy overlapping its attack
+area. It deals damage without applying knockback.
+
+### Acid Spitter
+
+The Acid Spitter is a ranged guard whose biological spit has been trained with
+acid. Its spit travels in a fixed arc and only affects an enemy on direct
+impact. A missed shot disappears when it hits the ground and does not create a
+puddle.
+
+A hit deals a small amount of immediate damage, followed by low damage over
+time for one second. Further hits extend the remaining duration of this effect,
+up to a maximum of eight seconds, but do not increase its damage per tick.
+
+When given the Attack command, an Acid Spitter moves until it reaches an
+effective spitting distance from its target. It falls back if the target gets
+too close. When given the Defend command, it remains at its assigned position
+and fires at enemies that enter spitting range.
 
 # Living World During Expeditions
 
@@ -298,7 +316,7 @@ personally.
 
 The first playable prototype validates one short end-to-end contract using one
 Department, one faction and one significant target. It includes direct Warden
-control, two distinct melee guard types in the AI squad, all six squad orders,
+control, two distinct guard types in the AI squad, all six squad orders,
 nonlethal capture, an optional prisoner, return transport, a physical Slab,
 basic preparation and a containment emergency.
 
