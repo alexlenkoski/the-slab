@@ -20,6 +20,19 @@ const ESCORT_GUARD_OFFSET := 75.0
 const ESCORT_MINIMUM_LEAD := 55.0
 const VEY_ESCAPE_SPEED := 260.0
 const VEY_ESCAPE_EXIT_X := 1325.0
+const PUNCH_COOLDOWN := 0.5
+const PUNCH_MOVEMENT_LOCK := 0.16
+const PUNCH_RANGE := 105.0
+const PUNCH_DAMAGE := 16.0
+const SPIT_COOLDOWN := 10.0
+const SPIT_SPEED := Vector2(430.0, -310.0)
+const SPIT_GRAVITY := 900.0
+const SPIT_PUDDLE_LIFETIME := 6.0
+const SPIT_PUDDLE_RADIUS := 58.0
+const DIRECT_SPIT_STUN := 3.0
+const NEEDLE_DAMAGE := 14.0
+const NEEDLE_RANGE := 76.0
+const NEEDLE_COOLDOWN := 0.9
 
 enum Phase { BRIEFING, EXPEDITION, SLAB, OUTCOME }
 enum Order { FOLLOW, HOLD, ATTACK, DEFEND, RESTRAIN, RETREAT }
@@ -32,10 +45,15 @@ var order := Order.FOLLOW
 var order_names := ["FOLLOW", "HOLD", "ATTACK", "DEFEND", "RESTRAIN", "RETREAT"]
 var order_flash := 0.0
 var attack_cooldown := 0.0
+var movement_lock := 0.0
+var spit_cooldown := 0.0
+var punch_flash := 0.0
 var invulnerable := 0.0
+var spit_projectiles: Array[Dictionary] = []
+var spit_puddles: Array[Dictionary] = []
 
-var target := {"pos": Vector2(2050, GROUND_Y), "health": 100.0, "max_health": 100.0, "captured": false, "stun": 0.0}
-var scout := {"pos": Vector2(1120, GROUND_Y), "health": 48.0, "captured": false, "active": true, "stun": 0.0}
+var target := {"pos": Vector2(2050, GROUND_Y), "health": 100.0, "max_health": 100.0, "captured": false, "stun": 0.0, "size": 2.0, "puddle_stun": 0.0}
+var scout := {"pos": Vector2(1120, GROUND_Y), "health": 48.0, "captured": false, "active": true, "stun": 0.0, "size": 1.0, "puddle_stun": 0.0}
 var capture_progress := 0.0
 var camp_progress := 0.0
 var expedition_message := "Reach Vey alive. The squad awaits your word."
@@ -81,6 +99,8 @@ func _setup_input() -> void:
 	_bind_button("jump", JOY_BUTTON_A)
 	_bind_key("attack", KEY_J)
 	_bind_button("attack", JOY_BUTTON_X)
+	_bind_key("spit", KEY_K)
+	_bind_button("spit", JOY_BUTTON_Y)
 	_bind_key("interact", KEY_E)
 	_bind_button("interact", JOY_BUTTON_B)
 	_bind_key("command_wheel", KEY_Q)
@@ -120,14 +140,17 @@ func _bind_axis(action: StringName, axis, value: float) -> void:
 
 func _reset_squad() -> void:
 	squad = [
-		{"pos": Vector2(115, GROUND_Y), "role": "WARD", "health": 70.0, "hold_x": 115.0, "facing": 1.0},
-		{"pos": Vector2(85, GROUND_Y), "role": "BINDER", "health": 65.0, "hold_x": 85.0, "facing": 1.0}
+		{"pos": Vector2(115, GROUND_Y), "role": "NEEDLE", "health": 70.0, "hold_x": 115.0, "facing": 1.0, "attack_cooldown": 0.0, "attack_flash": 0.0},
+		{"pos": Vector2(85, GROUND_Y), "role": "BINDER", "health": 65.0, "hold_x": 85.0, "facing": 1.0, "attack_cooldown": 0.0, "attack_flash": 0.0}
 	]
 
 
 func _process(delta: float) -> void:
 	elapsed += delta
 	attack_cooldown = maxf(0.0, attack_cooldown - delta)
+	movement_lock = maxf(0.0, movement_lock - delta)
+	spit_cooldown = maxf(0.0, spit_cooldown - delta)
+	punch_flash = maxf(0.0, punch_flash - delta)
 	invulnerable = maxf(0.0, invulnerable - delta)
 	order_flash = maxf(0.0, order_flash - delta)
 
@@ -175,10 +198,13 @@ func _read_orders() -> void:
 
 func _move_player(delta: float, left_bound: float, right_bound: float) -> void:
 	var axis := Input.get_axis("move_left", "move_right")
-	player.vel.x = move_toward(player.vel.x, axis * PLAYER_SPEED, 1700.0 * delta)
-	if absf(axis) > 0.1:
+	if movement_lock > 0.0:
+		player.vel.x = 0.0
+	else:
+		player.vel.x = move_toward(player.vel.x, axis * PLAYER_SPEED, 1700.0 * delta)
+	if movement_lock <= 0.0 and absf(axis) > 0.1:
 		player.facing = signf(axis)
-	if Input.is_action_just_pressed("jump") and player.pos.y >= GROUND_Y - 0.5:
+	if movement_lock <= 0.0 and Input.is_action_just_pressed("jump") and player.pos.y >= GROUND_Y - 0.5:
 		player.vel.y = -JUMP_SPEED
 	player.vel.y += GRAVITY * delta
 	player.pos += player.vel * delta
@@ -191,15 +217,18 @@ func _move_player(delta: float, left_bound: float, right_bound: float) -> void:
 func _update_expedition(delta: float) -> void:
 	_move_player(delta, 45.0, WORLD_END)
 	_read_orders()
+	_update_spit(delta, [target, scout])
 	_update_squad(delta)
 	_update_enemy(target, delta, true)
 	if scout.active:
 		_update_enemy(scout, delta, false)
 
 	if Input.is_action_just_pressed("attack") and attack_cooldown <= 0.0:
-		attack_cooldown = 0.32
-		_player_strike(target, 16.0)
-		if scout.active: _player_strike(scout, 19.0)
+		_start_punch()
+		_player_strike(target, PUNCH_DAMAGE)
+		if scout.active: _player_strike(scout, PUNCH_DAMAGE)
+	if Input.is_action_just_pressed("spit") and spit_cooldown <= 0.0:
+		_fire_spit()
 
 	if scout.active and scout.health <= 1.0 and player.pos.distance_to(scout.pos) < 90.0:
 		expedition_message = "The scout yields. Press E to take them into custody."
@@ -247,15 +276,80 @@ func _update_expedition(delta: float) -> void:
 
 
 func _player_strike(enemy: Dictionary, damage: float) -> void:
-	if enemy.captured or player.pos.distance_to(enemy.pos) > 105.0:
+	if enemy.captured or player.pos.distance_to(enemy.pos) > PUNCH_RANGE:
 		return
 	if signf(enemy.pos.x - player.pos.x) != player.facing and absf(enemy.pos.x - player.pos.x) > 28.0:
 		return
 	enemy.health = maxf(1.0, enemy.health - damage)
 	enemy.stun = 0.28
+	var knockback := 10.0 if float(enemy.get("size", 1.0)) > 1.0 else 22.0
+	enemy.pos.x += player.facing * knockback
 	# Contract targets are never killed by continued attacks.
 	if enemy == target and enemy.health <= 1.0:
 		expedition_message = "Vey is incapacitated. Further violence only burdens the journey."
+
+
+func _start_punch() -> void:
+	attack_cooldown = PUNCH_COOLDOWN
+	movement_lock = PUNCH_MOVEMENT_LOCK
+	punch_flash = PUNCH_MOVEMENT_LOCK
+	player.vel.x = 0.0
+	if player.pos.y < GROUND_Y - 0.5:
+		player.vel.y = maxf(player.vel.y, 480.0)
+
+
+func _fire_spit() -> void:
+	spit_cooldown = SPIT_COOLDOWN
+	movement_lock = PUNCH_MOVEMENT_LOCK
+	player.vel.x = 0.0
+	spit_projectiles.append({
+		"pos": player.pos + Vector2(player.facing * 28.0, -55.0),
+		"vel": Vector2(SPIT_SPEED.x * player.facing, SPIT_SPEED.y)
+	})
+
+
+func _update_spit(delta: float, enemies: Array = [target, scout]) -> void:
+	for index in range(spit_projectiles.size() - 1, -1, -1):
+		var projectile := spit_projectiles[index]
+		projectile.vel.y += SPIT_GRAVITY * delta
+		projectile.pos += projectile.vel * delta
+		var hit_enemy := false
+		for enemy in enemies:
+			if not bool(enemy.get("active", true)) or bool(enemy.get("captured", false)) or float(enemy.get("health", 0.0)) <= 0.0:
+				continue
+			var center: Vector2 = enemy.pos + Vector2(0.0, -34.0)
+			if projectile.pos.distance_to(center) <= 34.0:
+				enemy.stun = DIRECT_SPIT_STUN
+				enemy.puddle_stun = 0.0
+				hit_enemy = true
+				break
+		if hit_enemy:
+			spit_projectiles.remove_at(index)
+		elif projectile.pos.y >= GROUND_Y:
+			spit_puddles.append({"x": projectile.pos.x, "lifetime": SPIT_PUDDLE_LIFETIME})
+			spit_projectiles.remove_at(index)
+
+	for index in range(spit_puddles.size() - 1, -1, -1):
+		spit_puddles[index].lifetime -= delta
+		if spit_puddles[index].lifetime <= 0.0:
+			spit_puddles.remove_at(index)
+
+	for enemy in enemies:
+		if not bool(enemy.get("active", true)) or bool(enemy.get("captured", false)) or float(enemy.get("health", 0.0)) <= 0.0:
+			continue
+		var in_puddle := false
+		for puddle in spit_puddles:
+			if absf(enemy.pos.x - float(puddle.x)) <= SPIT_PUDDLE_RADIUS:
+				in_puddle = true
+				break
+		var stun_time := 1.8 if float(enemy.get("size", 1.0)) > 1.0 else 0.8
+		if in_puddle:
+			enemy.puddle_stun = minf(stun_time, float(enemy.puddle_stun) + delta)
+			if enemy.puddle_stun >= stun_time:
+				enemy.stun = DIRECT_SPIT_STUN
+				enemy.puddle_stun = 0.0
+		else:
+			enemy.puddle_stun = maxf(0.0, float(enemy.puddle_stun) - delta * 0.5)
 
 
 func _update_enemy(enemy: Dictionary, delta: float, is_target: bool) -> void:
@@ -283,6 +377,8 @@ func _update_enemy(enemy: Dictionary, delta: float, is_target: bool) -> void:
 func _update_squad(delta: float) -> void:
 	for index in squad.size():
 		var member := squad[index]
+		member.attack_cooldown = maxf(0.0, float(member.attack_cooldown) - delta)
+		member.attack_flash = maxf(0.0, float(member.attack_flash) - delta)
 		if member.health <= 0.0:
 			continue
 		var destination: float = member.pos.x
@@ -307,9 +403,26 @@ func _update_squad(delta: float) -> void:
 		if absf(destination - member.pos.x) > 0.5:
 			member.facing = signf(destination - member.pos.x)
 		member.pos.x = move_toward(member.pos.x, destination, 215.0 * delta)
-		if order == Order.ATTACK and absf(member.pos.x - target.pos.x) < 70.0 and target.health > 35.0:
-			target.health = maxf(1.0, target.health - 10.0 * delta)
-			target.stun = 0.08
+		if order == Order.ATTACK and member.role == "NEEDLE" and not target.captured:
+			member.facing = signf(target.pos.x - member.pos.x)
+			if absf(member.pos.x - target.pos.x) <= NEEDLE_RANGE and member.attack_cooldown <= 0.0:
+				_needle_guard_attack(member)
+
+
+func _needle_guard_attack(member: Dictionary) -> void:
+	member.attack_cooldown = NEEDLE_COOLDOWN
+	member.attack_flash = 0.18
+	# The swing is aimed at the commanded target but cleaves every enemy in its
+	# forward attack area. It deliberately applies no knockback.
+	for enemy in [target, scout]:
+		if enemy == scout and not scout.active:
+			continue
+		if enemy.captured:
+			continue
+		var offset: float = enemy.pos.x - member.pos.x
+		if absf(offset) <= NEEDLE_RANGE and (signf(offset) == member.facing or absf(offset) < 24.0):
+			enemy.health = maxf(1.0, float(enemy.health) - NEEDLE_DAMAGE)
+			enemy.stun = maxf(float(enemy.stun), 0.1)
 
 
 func _limit_prisoner_to_forward_guard(proposed_position: Vector2) -> Vector2:
@@ -340,11 +453,16 @@ func _enter_slab() -> void:
 
 func _update_slab(delta: float) -> void:
 	_move_player(delta, 45.0, 1215.0)
+	_update_spit(delta, raiders)
 	if Input.is_action_just_pressed("attack") and attack_cooldown <= 0.0:
-		attack_cooldown = 0.32
+		_start_punch()
 		for raider in raiders:
-			if raider.health > 0.0 and player.pos.distance_to(raider.pos) < 105.0:
+			var offset: float = raider.pos.x - player.pos.x
+			if raider.health > 0.0 and player.pos.distance_to(raider.pos) < PUNCH_RANGE and (signf(offset) == player.facing or absf(offset) < 28.0):
 				raider.health -= 24.0
+				raider.pos.x += player.facing * 22.0
+	if Input.is_action_just_pressed("spit") and spit_cooldown <= 0.0:
+		_fire_spit()
 
 	if not emergency_started:
 		_update_slab_stations()
@@ -392,7 +510,7 @@ func _start_emergency() -> void:
 	emergency_started = true
 	var count := 4 - (1 if scout.captured else 0)
 	for index in count:
-		raiders.append({"pos": Vector2(1160 + index * 36, GROUND_Y), "health": 42.0, "hit": 0.0})
+		raiders.append({"pos": Vector2(1160 + index * 36, GROUND_Y), "health": 42.0, "hit": 0.0, "stun": 0.0, "size": 1.0, "puddle_stun": 0.0})
 	slab_message = "The Mourning Choir breaches the east hall. Protect the living—and the prisoner."
 
 
@@ -406,6 +524,9 @@ func _update_emergency(delta: float) -> void:
 		if raider.health <= 0.0:
 			continue
 		living += 1
+		raider.stun = maxf(0.0, float(raider.stun) - delta)
+		if raider.stun > 0.0:
+			continue
 		raider.hit = maxf(0.0, raider.hit - delta)
 		var destination: float = player.pos.x
 		if cell_guards < 2:
@@ -525,11 +646,16 @@ func _draw_expedition() -> void:
 		draw_polygon(PackedVector2Array([Vector2(x-cam, GROUND_Y), Vector2(x+75-cam, GROUND_Y-height), Vector2(x+150-cam, GROUND_Y)]), PackedColorArray([Color("1b2429")]))
 	draw_rect(Rect2(0, GROUND_Y + 28, VIEW.x, 130), Color("24262b"))
 	draw_line(Vector2(0, GROUND_Y+27), Vector2(VIEW.x, GROUND_Y+27), Color("53605d"), 3)
+	for puddle in spit_puddles:
+		var puddle_pos := Vector2(float(puddle.x) - cam, GROUND_Y + 20.0)
+		draw_ellipse(puddle_pos, SPIT_PUDDLE_RADIUS, 10.0, Color(0.49, 0.68, 0.58, 0.68))
+	for projectile in spit_projectiles:
+		draw_circle(projectile.pos - Vector2(cam, 0.0), 9.0, Color("91bea3"))
 	_draw_camp(Vector2(145-cam, GROUND_Y))
 	if scout.active: _draw_enemy(scout.pos - Vector2(cam, 0), scout.health / 48.0, false)
 	_draw_enemy(target.pos - Vector2(cam, 0), target.health / target.max_health, true)
 	for member in squad:
-		_draw_squad_member(member.pos - Vector2(cam, 0), member.role, member.facing)
+		_draw_squad_member(member.pos - Vector2(cam, 0), member.role, member.facing, member.attack_flash)
 	_draw_warden(player.pos - Vector2(cam, 0))
 	_draw_hud("EXPEDITION · THE HUSHED GALLERIES", expedition_message)
 	_draw_order_bar()
@@ -544,6 +670,10 @@ func _draw_slab() -> void:
 	for x in range(0, 1280, 128):
 		draw_line(Vector2(x, 145), Vector2(x, 620), Color("242d32"), 2)
 	draw_line(Vector2(0, 618), Vector2(1280, 618), Color("68706b"), 4)
+	for puddle in spit_puddles:
+		draw_ellipse(Vector2(float(puddle.x), GROUND_Y + 20.0), SPIT_PUDDLE_RADIUS, 10.0, Color(0.49, 0.68, 0.58, 0.68))
+	for projectile in spit_projectiles:
+		draw_circle(projectile.pos, 9.0, Color("91bea3"))
 	# Brood chamber, command desk, containment cell, and east gate.
 	draw_circle(Vector2(245, 480), 82, Color("4c3f3c"))
 	draw_circle(Vector2(245, 478), 54, Color("8c6c62"))
@@ -621,6 +751,9 @@ func _draw_hud(location: String, message: String) -> void:
 	_text(location, Vector2(34, 34), 15, Color("83999b"))
 	_text(message, Vector2(34, 74), 18, Color("d2d5ca"))
 	_bar(Vector2(1020, 36), Vector2(220, 12), player.health / 100.0, Color("b96e68"), "WARDEN")
+	if phase == Phase.EXPEDITION or phase == Phase.SLAB:
+		var spit_status := "READY" if spit_cooldown <= 0.0 else "%.1fs" % spit_cooldown
+		_text("SPIT  %s" % spit_status, Vector2(1090, 82), 14, Color("91bea3"))
 
 
 func _draw_order_bar() -> void:
@@ -646,13 +779,16 @@ func _draw_warden(pos: Vector2) -> void:
 			false
 		)
 		draw_set_transform(Vector2.ZERO)
+		if punch_flash > 0.0:
+			draw_line(pos + Vector2(player.facing * 16.0, -38.0), pos + Vector2(player.facing * 54.0, -38.0), Color("d8c190"), 7.0)
+			draw_circle(pos + Vector2(player.facing * 58.0, -38.0), 7.0, Color("d8c190"))
 		return
 	draw_circle(pos + Vector2(0, -36), 17, Color("c4d5cc"))
 	draw_polygon(PackedVector2Array([pos+Vector2(-20,-20), pos+Vector2(20,-20), pos+Vector2(27,22), pos+Vector2(-27,22)]), PackedColorArray([Color("526a70")]))
 	draw_line(pos+Vector2(player.facing*10,-20), pos+Vector2(player.facing*39,3), Color("d8c190"), 5)
 
 
-func _draw_squad_member(pos: Vector2, role: String, facing: float) -> void:
+func _draw_squad_member(pos: Vector2, role: String, facing: float, attack_flash: float = 0.0) -> void:
 	if guard_texture:
 		var texture_size := guard_texture.get_size()
 		var draw_width := GUARD_DRAW_HEIGHT * texture_size.x / texture_size.y
@@ -664,10 +800,16 @@ func _draw_squad_member(pos: Vector2, role: String, facing: float) -> void:
 			false
 		)
 		draw_set_transform(Vector2.ZERO)
+		if role == "NEEDLE":
+			draw_line(pos + Vector2(facing * 8.0, -34.0), pos + Vector2(facing * 54.0, -15.0), Color("d9bd83"), 4.0)
+			if attack_flash > 0.0:
+				draw_arc(pos + Vector2(facing * 18.0, -28.0), 58.0, -1.25 if facing > 0.0 else 1.9, 1.25 if facing > 0.0 else 4.4, 18, Color("e8d9ae"), 5.0)
 		return
 	draw_circle(pos + Vector2(0,-25), 12, Color("8ca4a0"))
 	draw_rect(Rect2(pos+Vector2(-14,-13), Vector2(28,35)), Color("405159"))
 	_text(role.substr(0,1), pos+Vector2(-5,5), 12, Color("d9bd83"))
+	if role == "NEEDLE":
+		draw_line(pos + Vector2(facing * 8.0, -28.0), pos + Vector2(facing * 50.0, -10.0), Color("d9bd83"), 4.0)
 
 
 func _draw_enemy(pos: Vector2, ratio: float, primary: bool, show_health: bool = true) -> void:

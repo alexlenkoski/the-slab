@@ -36,6 +36,7 @@ and send the prisoner to preservation.
 | Move | A/D or arrows | Left stick |
 | Jump | Space | A / Cross |
 | Attack | J | X / Square |
+| Spit | K | Y / Triangle |
 | Interact / capture | E | B / Circle |
 | Select squad order | 1–6 | Left shoulder cycles |
 | Cycle squad order | Q | Left shoulder |
@@ -45,6 +46,11 @@ Squad orders are Follow, Hold, Attack, Defend, Restrain, and Retreat. A
 contract target becomes vulnerable to restraint at low health. Issue Restrain,
 bring at least two living squad members to the target, then hold Interact while
 standing close.
+
+The Warden's punch is a short forward strike. Spit travels in a fixed arc: a
+direct hit stuns an enemy, while a miss leaves a puddle that builds stun over
+time. The needle guard attacks after receiving the Attack order and can strike
+multiple overlapping enemies with one swing.
 
 All visuals are original placeholders. The Warden and guards use
 repository-owned PNG artwork; remaining visuals are drawn by the game code. The

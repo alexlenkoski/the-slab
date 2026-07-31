@@ -20,7 +20,9 @@ func _run() -> void:
 
 	_check(game.content.contract.target == "Vey, the Bell-Sworn", "content data did not load")
 	_check(InputMap.has_action("command_restrain"), "prototype inputs were not registered")
+	_check(InputMap.has_action("spit"), "spit input was not registered")
 	_check(game.squad.size() == 2, "prototype expedition should begin with two squad members")
+	_check(game.squad[0].role == "NEEDLE", "first squad member was not the needle guard")
 
 	game.target.captured = true
 	game.target.pos = Vector2(1000, game.GROUND_Y)
@@ -44,6 +46,33 @@ func _run() -> void:
 	for hit in 20:
 		game._player_strike(game.target, 20.0)
 	_check(game.target.health == 1.0, "contract target was not protected from lethal damage")
+
+	game.player.pos = Vector2(500, game.GROUND_Y - 80.0)
+	game.player.vel = Vector2(100.0, -50.0)
+	game._start_punch()
+	_check(game.attack_cooldown == 0.5, "punch did not apply its prototype cooldown")
+	_check(game.player.vel.x == 0.0 and game.player.vel.y >= 480.0, "air punch did not stop forward movement and force a fall")
+
+	game.target.health = 100.0
+	game.scout.health = 48.0
+	game.scout.active = true
+	game.target.pos = Vector2(700, game.GROUND_Y)
+	game.scout.pos = Vector2(710, game.GROUND_Y)
+	game.squad[0].pos = Vector2(650, game.GROUND_Y)
+	game.squad[0].facing = 1.0
+	game._needle_guard_attack(game.squad[0])
+	_check(game.target.health == 86.0 and game.scout.health == 34.0, "needle swing did not cleave overlapping enemies")
+	_check(game.target.pos.x == 700.0 and game.scout.pos.x == 710.0, "needle swing incorrectly applied knockback")
+
+	game.spit_projectiles.clear()
+	game.player.pos = Vector2(500, game.GROUND_Y)
+	game.player.facing = 1.0
+	game._fire_spit()
+	_check(game.spit_cooldown == 10.0, "spit did not apply its prototype cooldown")
+	game.spit_projectiles[0].pos = game.target.pos + Vector2(0, -34)
+	game._update_spit(0.01, [game.target, game.scout])
+	_check(game.target.stun == 3.0, "direct spit hit did not stun for three seconds")
+	_check(game.spit_projectiles.is_empty() and game.spit_puddles.is_empty(), "direct spit hit was not consumed")
 
 	game.scout.captured = true
 	game.scout.active = false
