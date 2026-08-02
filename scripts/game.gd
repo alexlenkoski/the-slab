@@ -47,8 +47,13 @@ const ACID_MIN_RANGE := 145.0
 const ACID_PREFERRED_RANGE := 225.0
 const ACID_MAX_RANGE := 275.0
 const FRESH_FLY_CAPACITY := 9
-const FRESH_FLY_FIELD_LIMIT := 3
-const FRESH_FLY_LAUNCH_DELAY := 3.0
+const FRESH_FLY_SWARM_LIMIT := 3
+const FRESH_FLY_SWARM_TIME := 5.0
+const FRESH_FLY_ATTACK_INTERVAL := 5.0
+const FRESH_FLY_REPLACEMENT_DELAY := 3.0
+const FRESH_FLY_SWARM_CENTER := Vector2(0.0, -105.0)
+const FRESH_FLY_SWARM_RADIUS := Vector2(64.0, 30.0)
+const FRESH_FLY_SWARM_ROTATION_SPEED := 1.25
 const FRESH_FLY_SPEED := 390.0
 const FRESH_FLY_EXPLOSION_RADIUS := 82.0
 const FRESH_FLY_DAMAGE := 18.0
@@ -71,8 +76,13 @@ var invulnerable := 0.0
 var spit_projectiles: Array[Dictionary] = []
 var spit_puddles: Array[Dictionary] = []
 var acid_projectiles: Array[Dictionary] = []
+# Flies in flight toward an enemy or returning to the swarm.
 var fresh_flies: Array[Dictionary] = []
+var fresh_fly_swarm: Array[Dictionary] = []
 var fresh_fly_bursts: Array[Dictionary] = []
+var fresh_fly_swarm_angle := 0.0
+var fresh_fly_replacement_cooldown := 0.0
+var next_fresh_fly_id := 0
 
 var target := {"pos": Vector2(2050, GROUND_Y), "health": 100.0, "max_health": 100.0, "capture_threshold": 35.0, "captured": false, "stun": 0.0, "size": 2.0, "puddle_stun": 0.0, "acid_duration": 0.0, "acid_tick": 0.0}
 var scout := {"pos": Vector2(1120, GROUND_Y), "health": 48.0, "capture_threshold": 1.0, "captured": false, "active": true, "stun": 0.0, "size": 1.0, "puddle_stun": 0.0, "acid_duration": 0.0, "acid_tick": 0.0}
@@ -166,7 +176,11 @@ func _bind_axis(action: StringName, axis, value: float) -> void:
 func _reset_squad() -> void:
 	squad.clear()
 	fresh_flies.clear()
+	fresh_fly_swarm.clear()
 	fresh_fly_bursts.clear()
+	fresh_fly_swarm_angle = 0.0
+	fresh_fly_replacement_cooldown = 0.0
+	next_fresh_fly_id = 0
 	var guard_definitions: Array = content.get("expedition_guards", [])
 	for index in guard_definitions.size():
 		var definition: Dictionary = guard_definitions[index]
@@ -180,8 +194,13 @@ func _reset_squad() -> void:
 			"attack_cooldown": 0.0,
 			"attack_flash": 0.0,
 			"hurt_cooldown": 0.0,
+			"fresh_fly_launch_cooldown": 0.0,
 			"fresh_flies": int(definition.get("fresh_flies", 0))
 		})
+	var brood_mother := _tiny_brood_mother()
+	if not brood_mother.is_empty():
+		for fly_index in mini(FRESH_FLY_SWARM_LIMIT, int(brood_mother.fresh_flies)):
+			_add_fresh_fly_to_swarm(brood_mother)
 
 
 func _process(delta: float) -> void:
@@ -482,6 +501,7 @@ func _update_squad(delta: float) -> void:
 		member.attack_cooldown = maxf(0.0, float(member.attack_cooldown) - delta)
 		member.attack_flash = maxf(0.0, float(member.attack_flash) - delta)
 		member.hurt_cooldown = maxf(0.0, float(member.get("hurt_cooldown", 0.0)) - delta)
+		member.fresh_fly_launch_cooldown = maxf(0.0, float(member.get("fresh_fly_launch_cooldown", 0.0)) - delta)
 		if member.health <= 0.0:
 			continue
 		var destination: float = member.pos.x
@@ -533,8 +553,8 @@ func _update_squad(delta: float) -> void:
 				acid_target = _acid_defend_target(member)
 			if not acid_target.is_empty():
 				_fire_acid_spit(member, acid_target)
-		if member.role == "TINY_BROOD_MOTHER" and order == Order.ATTACK and member.attack_cooldown <= 0.0 and _can_fresh_fly_target(target):
-			_launch_fresh_fly(member, target)
+		if member.role == "TINY_BROOD_MOTHER" and order == Order.ATTACK:
+			_try_launch_swarm_fly(member, target)
 
 
 func _tiny_brood_mother() -> Dictionary:
@@ -544,8 +564,8 @@ func _tiny_brood_mother() -> Dictionary:
 	return {}
 
 
-func _active_fresh_fly_count() -> int:
-	return fresh_flies.size()
+func _fresh_fly_total_remaining(member: Dictionary) -> int:
+	return mini(FRESH_FLY_CAPACITY, int(member.get("fresh_flies", 0)) + fresh_fly_swarm.size() + fresh_flies.size())
 
 
 func _can_fresh_fly_target(enemy: Dictionary) -> bool:
@@ -556,22 +576,44 @@ func _can_fresh_fly_target(enemy: Dictionary) -> bool:
 	)
 
 
-func _launch_fresh_fly(member: Dictionary, enemy: Dictionary) -> bool:
-	if int(member.get("fresh_flies", 0)) <= 0 or _active_fresh_fly_count() >= FRESH_FLY_FIELD_LIMIT or not _can_fresh_fly_target(enemy):
+func _add_fresh_fly_to_swarm(member: Dictionary) -> bool:
+	if int(member.get("fresh_flies", 0)) <= 0 or fresh_fly_swarm.size() >= FRESH_FLY_SWARM_LIMIT:
 		return false
-	var launch_facing := signf(enemy.pos.x - member.pos.x)
+	member.fresh_flies -= 1
+	fresh_fly_swarm.append({
+		"id": next_fresh_fly_id,
+		"pos": member.pos + FRESH_FLY_SWARM_CENTER,
+		"swarm_time": 0.0,
+		"facing": -1.0
+	})
+	next_fresh_fly_id += 1
+	return true
+
+
+func _try_launch_swarm_fly(member: Dictionary, enemy: Dictionary) -> bool:
+	if member.fresh_fly_launch_cooldown > 0.0 or not _can_fresh_fly_target(enemy):
+		return false
+	for index in fresh_fly_swarm.size():
+		if float(fresh_fly_swarm[index].swarm_time) >= FRESH_FLY_SWARM_TIME:
+			_launch_swarm_fly(member, index, enemy)
+			member.fresh_fly_launch_cooldown = FRESH_FLY_ATTACK_INTERVAL
+			return true
+	return false
+
+
+func _launch_swarm_fly(member: Dictionary, swarm_index: int, enemy: Dictionary) -> void:
+	var fly := fresh_fly_swarm[swarm_index]
+	var launch_facing := signf(enemy.pos.x - fly.pos.x)
 	if launch_facing == 0.0:
 		launch_facing = member.facing
-	member.fresh_flies -= 1
-	member.attack_cooldown = FRESH_FLY_LAUNCH_DELAY
 	member.attack_flash = 0.18
-	fresh_flies.append({
-		"pos": member.pos + Vector2(0.0, -58.0),
-		"target": enemy,
-		"returning": false,
-		"facing": launch_facing
-	})
-	return true
+	fly.target = enemy
+	fly.returning = false
+	fly.facing = launch_facing
+	fresh_flies.append(fly)
+	fresh_fly_swarm.remove_at(swarm_index)
+	if fresh_fly_replacement_cooldown <= 0.0:
+		fresh_fly_replacement_cooldown = FRESH_FLY_REPLACEMENT_DELAY
 
 
 func _damage_squad_member(member: Dictionary, damage: float, attacker: Dictionary) -> void:
@@ -579,12 +621,11 @@ func _damage_squad_member(member: Dictionary, damage: float, attacker: Dictionar
 	member.hurt_cooldown = 0.72
 	if member.role != "TINY_BROOD_MOTHER" or member.health <= 0.0:
 		return
-	var launches := mini(FRESH_FLY_FIELD_LIMIT - _active_fresh_fly_count(), int(member.get("fresh_flies", 0)))
-	for launch in launches:
-		_launch_fresh_fly(member, attacker)
-	# Retaliation is immediate; its flies launch together rather than inheriting
-	# the ordinary three-second cadence.
-	member.attack_cooldown = FRESH_FLY_LAUNCH_DELAY
+	# Retaliation launches every fly already in the swarm, regardless of its age
+	# or the ordinary commanded-attack interval.
+	for index in range(fresh_fly_swarm.size() - 1, -1, -1):
+		_launch_swarm_fly(member, index, attacker)
+	member.fresh_fly_launch_cooldown = FRESH_FLY_ATTACK_INTERVAL
 
 
 func _update_fresh_flies(delta: float, enemies: Array = [target, scout]) -> void:
@@ -593,6 +634,34 @@ func _update_fresh_flies(delta: float, enemies: Array = [target, scout]) -> void
 		if fresh_fly_bursts[index].lifetime <= 0.0:
 			fresh_fly_bursts.remove_at(index)
 	var brood_mother := _tiny_brood_mother()
+	if not brood_mother.is_empty():
+		# Mark invalid targets before considering replacements so a returning fly
+		# keeps its place in the three-fly swarm.
+		for flying_fly in fresh_flies:
+			if not bool(flying_fly.returning) and not _can_fresh_fly_target(flying_fly.target):
+				flying_fly.returning = true
+		fresh_fly_swarm_angle = fmod(fresh_fly_swarm_angle + FRESH_FLY_SWARM_ROTATION_SPEED * delta, TAU)
+		for index in fresh_fly_swarm.size():
+			var swarm_fly := fresh_fly_swarm[index]
+			swarm_fly.swarm_time = float(swarm_fly.swarm_time) + delta
+			var angle := fresh_fly_swarm_angle + TAU * float(index) / maxf(1.0, float(fresh_fly_swarm.size()))
+			var previous_x := float(swarm_fly.pos.x)
+			swarm_fly.pos = brood_mother.pos + FRESH_FLY_SWARM_CENTER + Vector2(cos(angle) * FRESH_FLY_SWARM_RADIUS.x, sin(angle) * FRESH_FLY_SWARM_RADIUS.y)
+			if absf(float(swarm_fly.pos.x) - previous_x) > 0.5:
+				swarm_fly.facing = signf(float(swarm_fly.pos.x) - previous_x)
+
+		var returning_count := 0
+		for flying_fly in fresh_flies:
+			if bool(flying_fly.returning):
+				returning_count += 1
+		if fresh_fly_swarm.size() + returning_count < FRESH_FLY_SWARM_LIMIT and int(brood_mother.fresh_flies) > 0:
+			fresh_fly_replacement_cooldown = maxf(0.0, fresh_fly_replacement_cooldown - delta)
+			if fresh_fly_replacement_cooldown <= 0.0:
+				_add_fresh_fly_to_swarm(brood_mother)
+				if fresh_fly_swarm.size() + returning_count < FRESH_FLY_SWARM_LIMIT and int(brood_mother.fresh_flies) > 0:
+					fresh_fly_replacement_cooldown = FRESH_FLY_REPLACEMENT_DELAY
+		else:
+			fresh_fly_replacement_cooldown = 0.0
 	for index in range(fresh_flies.size() - 1, -1, -1):
 		var fly := fresh_flies[index]
 		var enemy: Dictionary = fly.target
@@ -607,7 +676,10 @@ func _update_fresh_flies(delta: float, enemies: Array = [target, scout]) -> void
 				fly.facing = signf(return_destination.x - fly.pos.x)
 			fly.pos = fly.pos.move_toward(return_destination, FRESH_FLY_SPEED * delta)
 			if fly.pos.distance_to(return_destination) <= 8.0:
-				brood_mother.fresh_flies = mini(FRESH_FLY_CAPACITY, int(brood_mother.fresh_flies) + 1)
+				fly.erase("target")
+				fly.erase("returning")
+				fly.swarm_time = 0.0
+				fresh_fly_swarm.append(fly)
 				fresh_flies.remove_at(index)
 			continue
 		var destination: Vector2 = enemy.pos + Vector2(0.0, -32.0)
@@ -890,6 +962,8 @@ func _draw_expedition() -> void:
 		draw_circle(projectile.pos - Vector2(cam, 0.0), 9.0, Color("91bea3"))
 	for projectile in acid_projectiles:
 		draw_circle(projectile.pos - Vector2(cam, 0.0), 7.0, Color("b7d65b"))
+	for fly in fresh_fly_swarm:
+		_draw_fresh_fly(fly.pos - Vector2(cam, 0.0), false, float(fly.facing))
 	for fly in fresh_flies:
 		_draw_fresh_fly(fly.pos - Vector2(cam, 0.0), bool(fly.returning), float(fly.facing))
 	for burst in fresh_fly_bursts:
@@ -1054,7 +1128,7 @@ func _draw_squad_member(pos: Vector2, role: String, facing: float, attack_flash:
 				draw_line(pos + Vector2(facing * 28.0, -48.0), pos + Vector2(facing * 48.0, -53.0), Color("d5ed83"), 4.0)
 		elif role == "TINY_BROOD_MOTHER":
 			draw_circle(pos + Vector2(0.0, -34.0), 18.0, Color("8c6c62"), false, 4.0)
-			_text(str(int(_tiny_brood_mother().get("fresh_flies", 0))), pos + Vector2(-5.0, -29.0), 12, Color("ead8a6"))
+			_text(str(_fresh_fly_total_remaining(_tiny_brood_mother())), pos + Vector2(-5.0, -29.0), 12, Color("ead8a6"))
 		return
 	draw_circle(pos + Vector2(0,-25), 12, Color("8ca4a0"))
 	draw_rect(Rect2(pos+Vector2(-14,-13), Vector2(28,35)), Color("405159"))
