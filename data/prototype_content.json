@@ -20,5 +20,10 @@
     "name": "Choir Scout",
     "payment": 45,
     "attack_reduction": 1
-  }
+  },
+  "expedition_guards": [
+    {"role": "NEEDLE", "health": 70},
+    {"role": "ACID_SPITTER", "health": 65},
+    {"role": "TINY_BROOD_MOTHER", "health": 55, "fresh_flies": 9}
+  ]
 }

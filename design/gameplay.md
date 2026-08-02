@@ -127,7 +127,7 @@ have received the Attack command. A guard struck by an enemy may retaliate
 against that enemy until the enemy is dead or captured. More detailed guard
 engagement and command behavior remains to be designed.
 
-The prototype includes two distinct guard types with separate combat roles.
+The prototype includes three distinct guard types with separate combat roles.
 
 ### Needle Guard
 
@@ -338,13 +338,13 @@ personally.
 
 The first playable prototype validates one short end-to-end contract using one
 Department, one faction and one significant target. It includes direct Warden
-control, two distinct guard types in the AI squad, all six squad orders,
+control, three distinct guard types in the AI squad, all six squad orders,
 nonlethal capture, an optional prisoner, return transport, a physical Slab,
 basic preparation and a containment emergency.
 
-During ordinary travel, the two squad members maintain readable spacing behind
-the Warden. Once the primary target is bound, the squad forms around the
-prisoner, with one member ahead and one behind, and escorts them back to camp.
+During ordinary travel, the three squad members maintain readable spacing
+behind the Warden. Once the primary target is bound, the squad forms around the
+prisoner, with one member ahead and two behind, and escorts them back to camp.
 The prisoner's pace is limited by the forward escort so that the formation
 cannot leave the prisoner walking unguarded at its front.
 

@@ -13,6 +13,8 @@ const WARDEN_TEXTURE_PATH := "res://assets/characters/warden.png"
 const WARDEN_DRAW_HEIGHT := 96.0
 const GUARD_TEXTURE_PATH := "res://assets/characters/guard.png"
 const GUARD_DRAW_HEIGHT := 82.0
+const FRESH_FLY_TEXTURE_PATH := "res://assets/characters/fresh_fly.png"
+const FRESH_FLY_DRAW_SIZE := 38.0
 const SQUAD_FOLLOW_FIRST_OFFSET := 70.0
 const SQUAD_FOLLOW_SPACING := 115.0
 const ESCORT_PRISONER_OFFSET := 150.0
@@ -44,6 +46,12 @@ const ACID_SPIT_GRAVITY := 720.0
 const ACID_MIN_RANGE := 145.0
 const ACID_PREFERRED_RANGE := 225.0
 const ACID_MAX_RANGE := 275.0
+const FRESH_FLY_CAPACITY := 9
+const FRESH_FLY_FIELD_LIMIT := 3
+const FRESH_FLY_LAUNCH_DELAY := 3.0
+const FRESH_FLY_SPEED := 390.0
+const FRESH_FLY_EXPLOSION_RADIUS := 82.0
+const FRESH_FLY_DAMAGE := 18.0
 
 enum Phase { BRIEFING, EXPEDITION, SLAB, OUTCOME }
 enum Order { FOLLOW, HOLD, ATTACK, DEFEND, RESTRAIN, RETREAT }
@@ -63,9 +71,11 @@ var invulnerable := 0.0
 var spit_projectiles: Array[Dictionary] = []
 var spit_puddles: Array[Dictionary] = []
 var acid_projectiles: Array[Dictionary] = []
+var fresh_flies: Array[Dictionary] = []
+var fresh_fly_bursts: Array[Dictionary] = []
 
-var target := {"pos": Vector2(2050, GROUND_Y), "health": 100.0, "max_health": 100.0, "captured": false, "stun": 0.0, "size": 2.0, "puddle_stun": 0.0, "acid_duration": 0.0, "acid_tick": 0.0}
-var scout := {"pos": Vector2(1120, GROUND_Y), "health": 48.0, "captured": false, "active": true, "stun": 0.0, "size": 1.0, "puddle_stun": 0.0, "acid_duration": 0.0, "acid_tick": 0.0}
+var target := {"pos": Vector2(2050, GROUND_Y), "health": 100.0, "max_health": 100.0, "capture_threshold": 35.0, "captured": false, "stun": 0.0, "size": 2.0, "puddle_stun": 0.0, "acid_duration": 0.0, "acid_tick": 0.0}
+var scout := {"pos": Vector2(1120, GROUND_Y), "health": 48.0, "capture_threshold": 1.0, "captured": false, "active": true, "stun": 0.0, "size": 1.0, "puddle_stun": 0.0, "acid_duration": 0.0, "acid_tick": 0.0}
 var capture_progress := 0.0
 var camp_progress := 0.0
 var expedition_message := "Reach Vey alive. The squad awaits your word."
@@ -84,6 +94,7 @@ var result := {}
 var elapsed := 0.0
 var warden_texture: Texture2D
 var guard_texture: Texture2D
+var fresh_fly_texture: Texture2D
 
 
 func _ready() -> void:
@@ -93,6 +104,8 @@ func _ready() -> void:
 		warden_texture = load(WARDEN_TEXTURE_PATH) as Texture2D
 	if ResourceLoader.exists(GUARD_TEXTURE_PATH):
 		guard_texture = load(GUARD_TEXTURE_PATH) as Texture2D
+	if ResourceLoader.exists(FRESH_FLY_TEXTURE_PATH):
+		fresh_fly_texture = load(FRESH_FLY_TEXTURE_PATH) as Texture2D
 	var file := FileAccess.open("res://data/prototype_content.json", FileAccess.READ)
 	if file:
 		content = JSON.parse_string(file.get_as_text())
@@ -151,10 +164,24 @@ func _bind_axis(action: StringName, axis, value: float) -> void:
 
 
 func _reset_squad() -> void:
-	squad = [
-		{"pos": Vector2(115, GROUND_Y), "role": "NEEDLE", "health": 70.0, "hold_x": 115.0, "facing": 1.0, "attack_cooldown": 0.0, "attack_flash": 0.0},
-		{"pos": Vector2(85, GROUND_Y), "role": "ACID_SPITTER", "health": 65.0, "hold_x": 85.0, "facing": 1.0, "attack_cooldown": 0.0, "attack_flash": 0.0}
-	]
+	squad.clear()
+	fresh_flies.clear()
+	fresh_fly_bursts.clear()
+	var guard_definitions: Array = content.get("expedition_guards", [])
+	for index in guard_definitions.size():
+		var definition: Dictionary = guard_definitions[index]
+		var start_x := 115.0 - index * 30.0
+		squad.append({
+			"pos": Vector2(start_x, GROUND_Y),
+			"role": String(definition.role),
+			"health": float(definition.health),
+			"hold_x": start_x,
+			"facing": 1.0,
+			"attack_cooldown": 0.0,
+			"attack_flash": 0.0,
+			"hurt_cooldown": 0.0,
+			"fresh_flies": int(definition.get("fresh_flies", 0))
+		})
 
 
 func _process(delta: float) -> void:
@@ -236,6 +263,7 @@ func _update_expedition(delta: float) -> void:
 	_update_spit(delta, [target, scout])
 	_update_acid_projectiles(delta, [target, scout])
 	_update_acid_effects(delta, [target, scout])
+	_update_fresh_flies(delta, [target, scout])
 	_update_squad(delta)
 	_update_enemy(target, delta, true)
 	if scout.active:
@@ -427,6 +455,12 @@ func _update_enemy(enemy: Dictionary, delta: float, is_target: bool) -> void:
 	if enemy.stun > 0.0:
 		return
 	var distance: float = enemy.pos.distance_to(player.pos)
+	var brood_mother := _tiny_brood_mother()
+	if not brood_mother.is_empty():
+		var brood_distance: float = brood_mother.pos.distance_to(enemy.pos)
+		if brood_distance <= 76.0 and brood_distance < distance and brood_mother.hurt_cooldown <= 0.0:
+			_damage_squad_member(brood_mother, 13.0 if is_target else 8.0, enemy)
+			return
 	if distance < 360.0 and distance > 72.0:
 		enemy.pos.x += signf(player.pos.x - enemy.pos.x) * (95.0 if is_target else 125.0) * delta
 	elif distance <= 76.0 and invulnerable <= 0.0:
@@ -447,13 +481,14 @@ func _update_squad(delta: float) -> void:
 		var member := squad[index]
 		member.attack_cooldown = maxf(0.0, float(member.attack_cooldown) - delta)
 		member.attack_flash = maxf(0.0, float(member.attack_flash) - delta)
+		member.hurt_cooldown = maxf(0.0, float(member.get("hurt_cooldown", 0.0)) - delta)
 		if member.health <= 0.0:
 			continue
 		var destination: float = member.pos.x
 		match order:
 			Order.FOLLOW:
 				if target.captured:
-					# One guard leads the prisoner and the other closes the formation.
+					# One guard leads the prisoner and the others close the formation.
 					var escort_side := 1.0 if index == 0 else -1.0
 					destination = target.pos.x + player.facing * ESCORT_GUARD_OFFSET * escort_side
 				else:
@@ -473,8 +508,10 @@ func _update_squad(delta: float) -> void:
 					if target_direction == 0.0:
 						target_direction = member.facing
 					destination = target.pos.x - target_direction * ACID_PREFERRED_RANGE
-				else:
+				elif member.role == "NEEDLE":
 					destination = target.pos.x - 45.0
+				else:
+					destination = player.pos.x - player.facing * SQUAD_FOLLOW_FIRST_OFFSET
 			Order.RESTRAIN:
 				destination = target.pos.x + (-42.0 if index % 2 == 0 else 42.0)
 			Order.RETREAT:
@@ -496,6 +533,102 @@ func _update_squad(delta: float) -> void:
 				acid_target = _acid_defend_target(member)
 			if not acid_target.is_empty():
 				_fire_acid_spit(member, acid_target)
+		if member.role == "TINY_BROOD_MOTHER" and order == Order.ATTACK and member.attack_cooldown <= 0.0 and _can_fresh_fly_target(target):
+			_launch_fresh_fly(member, target)
+
+
+func _tiny_brood_mother() -> Dictionary:
+	for member in squad:
+		if member.role == "TINY_BROOD_MOTHER" and member.health > 0.0:
+			return member
+	return {}
+
+
+func _active_fresh_fly_count() -> int:
+	return fresh_flies.size()
+
+
+func _can_fresh_fly_target(enemy: Dictionary) -> bool:
+	return (
+		bool(enemy.get("active", true))
+		and not bool(enemy.get("captured", false))
+		and float(enemy.get("health", 0.0)) > float(enemy.get("capture_threshold", 1.0))
+	)
+
+
+func _launch_fresh_fly(member: Dictionary, enemy: Dictionary) -> bool:
+	if int(member.get("fresh_flies", 0)) <= 0 or _active_fresh_fly_count() >= FRESH_FLY_FIELD_LIMIT or not _can_fresh_fly_target(enemy):
+		return false
+	var launch_facing := signf(enemy.pos.x - member.pos.x)
+	if launch_facing == 0.0:
+		launch_facing = member.facing
+	member.fresh_flies -= 1
+	member.attack_cooldown = FRESH_FLY_LAUNCH_DELAY
+	member.attack_flash = 0.18
+	fresh_flies.append({
+		"pos": member.pos + Vector2(0.0, -58.0),
+		"target": enemy,
+		"returning": false,
+		"facing": launch_facing
+	})
+	return true
+
+
+func _damage_squad_member(member: Dictionary, damage: float, attacker: Dictionary) -> void:
+	member.health = maxf(0.0, float(member.health) - damage)
+	member.hurt_cooldown = 0.72
+	if member.role != "TINY_BROOD_MOTHER" or member.health <= 0.0:
+		return
+	var launches := mini(FRESH_FLY_FIELD_LIMIT - _active_fresh_fly_count(), int(member.get("fresh_flies", 0)))
+	for launch in launches:
+		_launch_fresh_fly(member, attacker)
+	# Retaliation is immediate; its flies launch together rather than inheriting
+	# the ordinary three-second cadence.
+	member.attack_cooldown = FRESH_FLY_LAUNCH_DELAY
+
+
+func _update_fresh_flies(delta: float, enemies: Array = [target, scout]) -> void:
+	for index in range(fresh_fly_bursts.size() - 1, -1, -1):
+		fresh_fly_bursts[index].lifetime -= delta
+		if fresh_fly_bursts[index].lifetime <= 0.0:
+			fresh_fly_bursts.remove_at(index)
+	var brood_mother := _tiny_brood_mother()
+	for index in range(fresh_flies.size() - 1, -1, -1):
+		var fly := fresh_flies[index]
+		var enemy: Dictionary = fly.target
+		if not bool(fly.returning) and not _can_fresh_fly_target(enemy):
+			fly.returning = true
+		if bool(fly.returning):
+			if brood_mother.is_empty():
+				fresh_flies.remove_at(index)
+				continue
+			var return_destination: Vector2 = brood_mother.pos + Vector2(0.0, -48.0)
+			if absf(return_destination.x - fly.pos.x) > 0.5:
+				fly.facing = signf(return_destination.x - fly.pos.x)
+			fly.pos = fly.pos.move_toward(return_destination, FRESH_FLY_SPEED * delta)
+			if fly.pos.distance_to(return_destination) <= 8.0:
+				brood_mother.fresh_flies = mini(FRESH_FLY_CAPACITY, int(brood_mother.fresh_flies) + 1)
+				fresh_flies.remove_at(index)
+			continue
+		var destination: Vector2 = enemy.pos + Vector2(0.0, -32.0)
+		if absf(destination.x - fly.pos.x) > 0.5:
+			fly.facing = signf(destination.x - fly.pos.x)
+		fly.pos = fly.pos.move_toward(destination, FRESH_FLY_SPEED * delta)
+		if fly.pos.distance_to(destination) <= 10.0:
+			_explode_fresh_fly(fly.pos, enemies)
+			fresh_flies.remove_at(index)
+
+
+func _explode_fresh_fly(position: Vector2, enemies: Array) -> void:
+	fresh_fly_bursts.append({"pos": position, "lifetime": 0.22})
+	for enemy in enemies:
+		if not bool(enemy.get("active", true)) or bool(enemy.get("captured", false)):
+			continue
+		if (enemy.pos + Vector2(0.0, -32.0)).distance_to(position) > FRESH_FLY_EXPLOSION_RADIUS:
+			continue
+		var threshold := float(enemy.get("capture_threshold", 1.0))
+		enemy.health = maxf(threshold, float(enemy.health) - FRESH_FLY_DAMAGE)
+		enemy.stun = maxf(float(enemy.get("stun", 0.0)), 0.15)
 
 
 func _acid_defend_target(member: Dictionary) -> Dictionary:
@@ -757,6 +890,11 @@ func _draw_expedition() -> void:
 		draw_circle(projectile.pos - Vector2(cam, 0.0), 9.0, Color("91bea3"))
 	for projectile in acid_projectiles:
 		draw_circle(projectile.pos - Vector2(cam, 0.0), 7.0, Color("b7d65b"))
+	for fly in fresh_flies:
+		_draw_fresh_fly(fly.pos - Vector2(cam, 0.0), bool(fly.returning), float(fly.facing))
+	for burst in fresh_fly_bursts:
+		var burst_ratio: float = float(burst.lifetime) / 0.22
+		draw_circle(burst.pos - Vector2(cam, 0.0), FRESH_FLY_EXPLOSION_RADIUS * (1.0 - burst_ratio * 0.35), Color(0.88, 0.58, 0.25, burst_ratio * 0.42), false, 6.0)
 	_draw_camp(Vector2(145-cam, GROUND_Y))
 	if scout.active: _draw_enemy(scout.pos - Vector2(cam, 0), scout.health / 48.0, false)
 	_draw_enemy(target.pos - Vector2(cam, 0), target.health / target.max_health, true)
@@ -914,6 +1052,9 @@ func _draw_squad_member(pos: Vector2, role: String, facing: float, attack_flash:
 			draw_circle(pos + Vector2(facing * 25.0, -48.0), 5.0, Color("b7d65b"))
 			if attack_flash > 0.0:
 				draw_line(pos + Vector2(facing * 28.0, -48.0), pos + Vector2(facing * 48.0, -53.0), Color("d5ed83"), 4.0)
+		elif role == "TINY_BROOD_MOTHER":
+			draw_circle(pos + Vector2(0.0, -34.0), 18.0, Color("8c6c62"), false, 4.0)
+			_text(str(int(_tiny_brood_mother().get("fresh_flies", 0))), pos + Vector2(-5.0, -29.0), 12, Color("ead8a6"))
 		return
 	draw_circle(pos + Vector2(0,-25), 12, Color("8ca4a0"))
 	draw_rect(Rect2(pos+Vector2(-14,-13), Vector2(28,35)), Color("405159"))
@@ -922,6 +1063,26 @@ func _draw_squad_member(pos: Vector2, role: String, facing: float, attack_flash:
 		draw_line(pos + Vector2(facing * 8.0, -28.0), pos + Vector2(facing * 50.0, -10.0), Color("d9bd83"), 4.0)
 	elif role == "ACID_SPITTER":
 		draw_circle(pos + Vector2(facing * 20.0, -32.0), 5.0, Color("b7d65b"))
+	elif role == "TINY_BROOD_MOTHER":
+		draw_circle(pos + Vector2(0.0, -26.0), 18.0, Color("8c6c62"), false, 4.0)
+
+
+func _draw_fresh_fly(pos: Vector2, returning: bool, facing: float) -> void:
+	var color := Color("a7b9a2") if returning else Color("e0b66f")
+	if fresh_fly_texture:
+		# The source artwork faces left, so mirror it while flying right.
+		draw_set_transform(pos, 0.0, Vector2(-facing, 1.0))
+		draw_texture_rect(
+			fresh_fly_texture,
+			Rect2(Vector2.ONE * -FRESH_FLY_DRAW_SIZE / 2.0, Vector2.ONE * FRESH_FLY_DRAW_SIZE),
+			false,
+			color
+		)
+		draw_set_transform(Vector2.ZERO)
+		return
+	draw_circle(pos, 7.0, color)
+	draw_line(pos + Vector2(-4.0, -3.0), pos + Vector2(-11.0, -8.0), color.lightened(0.2), 2.0)
+	draw_line(pos + Vector2(4.0, -3.0), pos + Vector2(11.0, -8.0), color.lightened(0.2), 2.0)
 
 
 func _draw_enemy(pos: Vector2, ratio: float, primary: bool, show_health: bool = true) -> void:

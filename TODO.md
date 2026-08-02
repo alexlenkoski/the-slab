@@ -7,6 +7,5 @@
 - Make a separate warden's room.
 - Flesh out the prison layout.
 - Adding five more enemies
-- Two more guard types.
+- One more guard type.
    + Ranged unit guard
-   + Tiny Brood Mother (explosive guard)

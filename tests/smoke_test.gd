@@ -21,9 +21,12 @@ func _run() -> void:
 	_check(game.content.contract.target == "Vey, the Bell-Sworn", "content data did not load")
 	_check(InputMap.has_action("command_restrain"), "prototype inputs were not registered")
 	_check(InputMap.has_action("spit"), "spit input was not registered")
-	_check(game.squad.size() == 2, "prototype expedition should begin with two squad members")
+	_check(game.squad.size() == 3, "prototype expedition should begin with three squad members")
 	_check(game.squad[0].role == "NEEDLE", "first squad member was not the needle guard")
 	_check(game.squad[1].role == "ACID_SPITTER", "second squad member was not the Acid Spitter")
+	_check(game.squad[2].role == "TINY_BROOD_MOTHER", "third squad member was not the Tiny Brood Mother")
+	_check(game.squad[2].fresh_flies == 9, "Tiny Brood Mother did not begin with nine Fresh Flies")
+	_check(game.fresh_fly_texture != null, "Fresh Fly artwork did not load")
 
 	game.target.captured = true
 	game.target.pos = Vector2(1000, game.GROUND_Y)
@@ -92,6 +95,42 @@ func _run() -> void:
 	_check(game.target.health == 60.0, "acid impact damage did not remain weak and constant")
 	game._update_acid_effects(0.25, [game.target])
 	_check(game.target.health == 58.0, "acid did not apply its fixed tick damage")
+
+	var brood_mother: Dictionary = game.squad[2]
+	game.fresh_flies.clear()
+	brood_mother.fresh_flies = 9
+	brood_mother.attack_cooldown = 0.0
+	game.target.health = 100.0
+	game.target.captured = false
+	game.order = game.Order.ATTACK
+	game._update_squad(0.1)
+	_check(game.fresh_flies.size() == 1 and brood_mother.fresh_flies == 8, "Attack did not launch exactly one Fresh Fly")
+	game._update_squad(3.0)
+	_check(game.fresh_flies.size() == 2 and brood_mother.fresh_flies == 7, "Attack did not automatically launch another fly after three seconds")
+	game._update_squad(3.0)
+	game._update_squad(3.0)
+	_check(game.fresh_flies.size() == 3, "Tiny Brood Mother exceeded or failed to fill the three-fly field limit")
+
+	game.target.health = 50.0
+	game.scout.health = 40.0
+	game.target.pos = Vector2(700, game.GROUND_Y)
+	game.scout.pos = Vector2(740, game.GROUND_Y)
+	game._explode_fresh_fly(game.target.pos + Vector2(0, -32), [game.target, game.scout])
+	_check(game.target.health == 35.0, "Fresh Fly explosion crossed the target's capture threshold")
+	_check(game.scout.health == 22.0, "Fresh Fly explosion did not damage every enemy in its area")
+
+	game.fresh_flies.clear()
+	brood_mother.fresh_flies = 8
+	game.fresh_flies.append({"pos": brood_mother.pos + Vector2(0, -48), "target": game.target, "returning": false})
+	game._update_fresh_flies(0.01, [game.target, game.scout])
+	_check(game.fresh_flies.is_empty() and brood_mother.fresh_flies == 9, "fly did not return when its target reached capture threshold")
+
+	game.target.health = 100.0
+	game.fresh_flies.clear()
+	brood_mother.fresh_flies = 9
+	brood_mother.health = 55.0
+	game._damage_squad_member(brood_mother, 5.0, game.target)
+	_check(game.fresh_flies.size() == 3 and brood_mother.fresh_flies == 6, "attacking the Tiny Brood Mother did not launch up to three flies")
 
 	game.spit_projectiles.clear()
 	game.player.pos = Vector2(500, game.GROUND_Y)

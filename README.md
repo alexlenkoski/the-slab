@@ -52,7 +52,12 @@ direct hit stuns an enemy, while a miss leaves a puddle that builds stun over
 time. The needle guard attacks after receiving the Attack order and can strike
 multiple overlapping enemies with one swing. The Acid Spitter seeks ranged
 distance under the Attack order, holds position under Defend, and applies an
-extendable damage-over-time effect with its fixed-arc shot.
+extendable damage-over-time effect with its fixed-arc shot. The Tiny Brood
+Mother carries nine single-use Fresh Flies. Under Attack she launches one every
+three seconds, with at most three active at once; if struck, she retaliates with
+up to three. Their explosions damage groups without pushing capturable enemies
+below their capture threshold, and unspent flies return when their target is
+ready to restrain.
 
 All visuals are original placeholders. The Warden and guards use
 repository-owned PNG artwork; remaining visuals are drawn by the game code. The
