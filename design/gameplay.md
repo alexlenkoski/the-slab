@@ -157,21 +157,32 @@ The Tiny Brood Mother is an explosive guard unit that follows the Warden as a
 normal member of the squad. She begins each expedition with a brood of nine
 Fresh Flies. This brood cannot be replenished during the expedition.
 
-When the Tiny Brood Mother receives the Attack command, she launches one Fresh
-Fly toward the commanded enemy. While that order remains active, she launches
-another fly after a three-second delay whenever a field slot is available. No
-more than three Fresh Flies may be active at once. Each fly is consumed when it
-reaches its target and explodes.
+Up to three Fresh Flies remain visibly deployed above the Tiny Brood Mother
+throughout the expedition. They hold a triangular swarm formation that rotates
+clockwise around her. At the beginning of the expedition, three flies rise into
+this swarm. When a fly leaves the swarm, a replacement from the undeployed
+brood joins it after three seconds, if one remains available.
 
-If the Tiny Brood Mother is attacked, she retaliates by immediately launching
-up to three available Fresh Flies at the attacker, subject to the same limit of
-three active flies.
+Each fly must remain in the swarm for five seconds before it becomes eligible
+for a commanded attack. Eligible flies launch in the order in which they joined
+the swarm. While the Attack order remains active, the oldest eligible fly
+launches toward the commanded enemy, and no more than one fly may launch during
+each five-second period. A launched fly is consumed when it reaches its target
+and explodes.
+
+If the Tiny Brood Mother is attacked, defensive retaliation is an exception to
+the ordinary eligibility and launch-delay rules. Every Fresh Fly currently in
+the swarm immediately launches at the attacker. Only flies already present in
+the swarm retaliate; undeployed flies do not bypass the three-second deployment
+delay.
 
 A Fresh Fly explosion damages every enemy within its area. Its damage is
 nonlethal to capturable enemies and cannot reduce them below their capture
 threshold. Once a targeted enemy reaches that threshold, the Tiny Brood Mother
 stops launching flies at it. Fresh Flies already pursuing that enemy return to
-the Tiny Brood Mother and rejoin her remaining brood instead of exploding.
+the Tiny Brood Mother and rejoin the rotating swarm instead of exploding. A
+returning fly is treated as newly joined and must spend five seconds in the
+swarm before it can launch again.
 
 # Living World During Expeditions
 
