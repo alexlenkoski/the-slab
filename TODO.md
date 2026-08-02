@@ -9,5 +9,4 @@
 - Adding five more enemies
 - Two more guard types.
    + Ranged unit guard
-   + Explosive guard
-
+   + Tiny Brood Mother (explosive guard)

@@ -151,6 +151,28 @@ effective spitting distance from its target. It falls back if the target gets
 too close. When given the Defend command, it remains at its assigned position
 and fires at enemies that enter spitting range.
 
+### Tiny Brood Mother
+
+The Tiny Brood Mother is an explosive guard unit that follows the Warden as a
+normal member of the squad. She begins each expedition with a brood of nine
+Fresh Flies. This brood cannot be replenished during the expedition.
+
+When the Tiny Brood Mother receives the Attack command, she launches one Fresh
+Fly toward the commanded enemy. While that order remains active, she launches
+another fly after a three-second delay whenever a field slot is available. No
+more than three Fresh Flies may be active at once. Each fly is consumed when it
+reaches its target and explodes.
+
+If the Tiny Brood Mother is attacked, she retaliates by immediately launching
+up to three available Fresh Flies at the attacker, subject to the same limit of
+three active flies.
+
+A Fresh Fly explosion damages every enemy within its area. Its damage is
+nonlethal to capturable enemies and cannot reduce them below their capture
+threshold. Once a targeted enemy reaches that threshold, the Tiny Brood Mother
+stops launching flies at it. Fresh Flies already pursuing that enemy return to
+the Tiny Brood Mother and rejoin her remaining brood instead of exploding.
+
 # Living World During Expeditions
 
 The Slab continues operating while the Warden is away. Threats and prison events
