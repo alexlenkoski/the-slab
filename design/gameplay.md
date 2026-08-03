@@ -159,9 +159,10 @@ Fresh Flies. This brood cannot be replenished during the expedition.
 
 Up to three Fresh Flies remain visibly deployed above the Tiny Brood Mother
 throughout the expedition. They hold a triangular swarm formation that rotates
-clockwise around her. At the beginning of the expedition, three flies rise into
-this swarm. When a fly leaves the swarm, a replacement from the undeployed
-brood joins it after three seconds, if one remains available.
+clockwise around her. At the beginning of the expedition, the swarm is empty.
+Three flies rise into it incrementally, with one joining every three seconds.
+When a fly leaves the swarm, a replacement from the undeployed brood joins it
+after three seconds, if one remains available.
 
 Each fly must remain in the swarm for five seconds before it becomes eligible
 for a commanded attack. Eligible flies launch in the order in which they joined

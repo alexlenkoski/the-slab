@@ -32,11 +32,11 @@ const SPIT_GRAVITY := 900.0
 const SPIT_PUDDLE_LIFETIME := 6.0
 const SPIT_PUDDLE_RADIUS := 58.0
 const DIRECT_SPIT_STUN := 3.0
-const NEEDLE_DAMAGE := 14.0
+const NEEDLE_DAMAGE := 7.0
 const NEEDLE_RANGE := 76.0
 const NEEDLE_COOLDOWN := 0.9
-const ACID_IMPACT_DAMAGE := 4.0
-const ACID_TICK_DAMAGE := 2.0
+const ACID_IMPACT_DAMAGE := 2.0
+const ACID_TICK_DAMAGE := 1.0
 const ACID_TICK_INTERVAL := 0.25
 const ACID_DURATION_PER_HIT := 1.0
 const ACID_MAX_DURATION := 8.0
@@ -56,7 +56,7 @@ const FRESH_FLY_SWARM_RADIUS := Vector2(64.0, 30.0)
 const FRESH_FLY_SWARM_ROTATION_SPEED := 1.25
 const FRESH_FLY_SPEED := 390.0
 const FRESH_FLY_EXPLOSION_RADIUS := 82.0
-const FRESH_FLY_DAMAGE := 18.0
+const FRESH_FLY_DAMAGE := 9.0
 
 enum Phase { BRIEFING, EXPEDITION, SLAB, OUTCOME }
 enum Order { FOLLOW, HOLD, ATTACK, DEFEND, RESTRAIN, RETREAT }
@@ -179,7 +179,9 @@ func _reset_squad() -> void:
 	fresh_fly_swarm.clear()
 	fresh_fly_bursts.clear()
 	fresh_fly_swarm_angle = 0.0
-	fresh_fly_replacement_cooldown = 0.0
+	# The opening swarm deploys through the same staggered three-second cadence
+	# as later replacements instead of appearing all at once.
+	fresh_fly_replacement_cooldown = FRESH_FLY_REPLACEMENT_DELAY
 	next_fresh_fly_id = 0
 	var guard_definitions: Array = content.get("expedition_guards", [])
 	for index in guard_definitions.size():
@@ -189,6 +191,7 @@ func _reset_squad() -> void:
 			"pos": Vector2(start_x, GROUND_Y),
 			"role": String(definition.role),
 			"health": float(definition.health),
+			"max_health": float(definition.health),
 			"hold_x": start_x,
 			"facing": 1.0,
 			"attack_cooldown": 0.0,
@@ -197,10 +200,6 @@ func _reset_squad() -> void:
 			"fresh_fly_launch_cooldown": 0.0,
 			"fresh_flies": int(definition.get("fresh_flies", 0))
 		})
-	var brood_mother := _tiny_brood_mother()
-	if not brood_mother.is_empty():
-		for fly_index in mini(FRESH_FLY_SWARM_LIMIT, int(brood_mother.fresh_flies)):
-			_add_fresh_fly_to_swarm(brood_mother)
 
 
 func _process(delta: float) -> void:
@@ -282,8 +281,10 @@ func _update_expedition(delta: float) -> void:
 	_update_spit(delta, [target, scout])
 	_update_acid_projectiles(delta, [target, scout])
 	_update_acid_effects(delta, [target, scout])
-	_update_fresh_flies(delta, [target, scout])
 	_update_squad(delta)
+	# Orbit from the Brood Mother's position after squad movement. This keeps the
+	# swarm attached and advancing even on the frame she reverses direction.
+	_update_fresh_flies(delta, [target, scout])
 	_update_enemy(target, delta, true)
 	if scout.active:
 		_update_enemy(scout, delta, false)
@@ -564,8 +565,10 @@ func _tiny_brood_mother() -> Dictionary:
 	return {}
 
 
-func _fresh_fly_total_remaining(member: Dictionary) -> int:
-	return mini(FRESH_FLY_CAPACITY, int(member.get("fresh_flies", 0)) + fresh_fly_swarm.size() + fresh_flies.size())
+func _fresh_fly_reserve_count(member: Dictionary) -> int:
+	# Undeployed and orbiting flies have not launched yet. Flies already in
+	# flight are committed and therefore no longer appear in the reserve count.
+	return mini(FRESH_FLY_CAPACITY, int(member.get("fresh_flies", 0)) + fresh_fly_swarm.size())
 
 
 func _can_fresh_fly_target(enemy: Dictionary) -> bool:
@@ -617,8 +620,14 @@ func _launch_swarm_fly(member: Dictionary, swarm_index: int, enemy: Dictionary) 
 
 
 func _damage_squad_member(member: Dictionary, damage: float, attacker: Dictionary) -> void:
+	var was_alive := float(member.health) > 0.0
 	member.health = maxf(0.0, float(member.health) - damage)
 	member.hurt_cooldown = 0.72
+	if was_alive and member.health <= 0.0:
+		expedition_message = "%s is down and can no longer act." % String(member.role).replace("_", " ").capitalize()
+		if member.role == "TINY_BROOD_MOTHER":
+			fresh_fly_swarm.clear()
+			fresh_flies.clear()
 	if member.role != "TINY_BROOD_MOTHER" or member.health <= 0.0:
 		return
 	# Retaliation launches every fly already in the swarm, regardless of its age
@@ -973,7 +982,13 @@ func _draw_expedition() -> void:
 	if scout.active: _draw_enemy(scout.pos - Vector2(cam, 0), scout.health / 48.0, false)
 	_draw_enemy(target.pos - Vector2(cam, 0), target.health / target.max_health, true)
 	for member in squad:
-		_draw_squad_member(member.pos - Vector2(cam, 0), member.role, member.facing, member.attack_flash)
+		_draw_squad_member(
+			member.pos - Vector2(cam, 0),
+			member.role,
+			member.facing,
+			member.attack_flash,
+			float(member.health) / float(member.max_health)
+		)
 	_draw_warden(player.pos - Vector2(cam, 0))
 	_draw_hud("EXPEDITION · THE HUSHED GALLERIES", expedition_message)
 	_draw_order_bar()
@@ -1106,7 +1121,11 @@ func _draw_warden(pos: Vector2) -> void:
 	draw_line(pos+Vector2(player.facing*10,-20), pos+Vector2(player.facing*39,3), Color("d8c190"), 5)
 
 
-func _draw_squad_member(pos: Vector2, role: String, facing: float, attack_flash: float = 0.0) -> void:
+func _draw_squad_member(pos: Vector2, role: String, facing: float, attack_flash: float = 0.0, health_ratio: float = 1.0) -> void:
+	var downed := health_ratio <= 0.0
+	var displayed_health := clampf(health_ratio, 0.0, 1.0)
+	draw_rect(Rect2(pos + Vector2(-28.0, -91.0), Vector2(56.0, 6.0)), Color("20252a"))
+	draw_rect(Rect2(pos + Vector2(-27.0, -90.0), Vector2(54.0 * displayed_health, 4.0)), Color("80ad83") if not downed else Color("704f4b"))
 	if guard_texture:
 		var texture_size := guard_texture.get_size()
 		var draw_width := GUARD_DRAW_HEIGHT * texture_size.x / texture_size.y
@@ -1115,9 +1134,13 @@ func _draw_squad_member(pos: Vector2, role: String, facing: float, attack_flash:
 		draw_texture_rect(
 			guard_texture,
 			Rect2(-draw_width / 2.0, -GUARD_DRAW_HEIGHT + 24.0, draw_width, GUARD_DRAW_HEIGHT),
-			false
+			false,
+			Color(0.34, 0.36, 0.38, 0.72) if downed else Color.WHITE
 		)
 		draw_set_transform(Vector2.ZERO)
+		if downed:
+			_text("DOWN", pos + Vector2(-22.0, 32.0), 12, Color("b98d72"))
+			return
 		if role == "NEEDLE":
 			draw_line(pos + Vector2(facing * 8.0, -34.0), pos + Vector2(facing * 54.0, -15.0), Color("d9bd83"), 4.0)
 			if attack_flash > 0.0:
@@ -1128,10 +1151,13 @@ func _draw_squad_member(pos: Vector2, role: String, facing: float, attack_flash:
 				draw_line(pos + Vector2(facing * 28.0, -48.0), pos + Vector2(facing * 48.0, -53.0), Color("d5ed83"), 4.0)
 		elif role == "TINY_BROOD_MOTHER":
 			draw_circle(pos + Vector2(0.0, -34.0), 18.0, Color("8c6c62"), false, 4.0)
-			_text(str(_fresh_fly_total_remaining(_tiny_brood_mother())), pos + Vector2(-5.0, -29.0), 12, Color("ead8a6"))
+			_text(str(_fresh_fly_reserve_count(_tiny_brood_mother())), pos + Vector2(-5.0, -29.0), 12, Color("ead8a6"))
 		return
-	draw_circle(pos + Vector2(0,-25), 12, Color("8ca4a0"))
-	draw_rect(Rect2(pos+Vector2(-14,-13), Vector2(28,35)), Color("405159"))
+	draw_circle(pos + Vector2(0,-25), 12, Color("4b5050") if downed else Color("8ca4a0"))
+	draw_rect(Rect2(pos+Vector2(-14,-13), Vector2(28,35)), Color("292d30") if downed else Color("405159"))
+	if downed:
+		_text("DOWN", pos + Vector2(-22.0, 32.0), 12, Color("b98d72"))
+		return
 	_text(role.substr(0,1), pos+Vector2(-5,5), 12, Color("d9bd83"))
 	if role == "NEEDLE":
 		draw_line(pos + Vector2(facing * 8.0, -28.0), pos + Vector2(facing * 50.0, -10.0), Color("d9bd83"), 4.0)

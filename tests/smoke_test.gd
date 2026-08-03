@@ -25,8 +25,16 @@ func _run() -> void:
 	_check(game.squad[0].role == "NEEDLE", "first squad member was not the needle guard")
 	_check(game.squad[1].role == "ACID_SPITTER", "second squad member was not the Acid Spitter")
 	_check(game.squad[2].role == "TINY_BROOD_MOTHER", "third squad member was not the Tiny Brood Mother")
-	_check(game.squad[2].fresh_flies == 6 and game.fresh_fly_swarm.size() == 3, "Tiny Brood Mother did not begin with three of nine flies in her swarm")
+	_check(game.squad[2].fresh_flies == 9 and game.fresh_fly_swarm.is_empty(), "Tiny Brood Mother did not begin with all nine flies undeployed")
 	_check(game.fresh_fly_texture != null, "Fresh Fly artwork did not load")
+	game._update_fresh_flies(2.9, [game.target, game.scout])
+	_check(game.fresh_fly_swarm.is_empty(), "the first Fresh Fly deployed before three seconds")
+	game._update_fresh_flies(0.11, [game.target, game.scout])
+	_check(game.fresh_fly_swarm.size() == 1 and game.squad[2].fresh_flies == 8, "the first Fresh Fly did not deploy after three seconds")
+	game._update_fresh_flies(3.0, [game.target, game.scout])
+	_check(game.fresh_fly_swarm.size() == 2 and game.squad[2].fresh_flies == 7, "the opening Fresh Flies did not deploy incrementally")
+	game._update_fresh_flies(3.0, [game.target, game.scout])
+	_check(game.fresh_fly_swarm.size() == 3 and game.squad[2].fresh_flies == 6, "the opening swarm did not fill incrementally")
 
 	game.target.captured = true
 	game.target.pos = Vector2(1000, game.GROUND_Y)
@@ -65,7 +73,7 @@ func _run() -> void:
 	game.squad[0].pos = Vector2(650, game.GROUND_Y)
 	game.squad[0].facing = 1.0
 	game._needle_guard_attack(game.squad[0])
-	_check(game.target.health == 86.0 and game.scout.health == 34.0, "needle swing did not cleave overlapping enemies")
+	_check(game.target.health == 93.0 and game.scout.health == 41.0, "needle swing did not cleave overlapping enemies at reduced damage")
 	_check(game.target.pos.x == 700.0 and game.scout.pos.x == 710.0, "needle swing incorrectly applied knockback")
 
 	var acid_spitter: Dictionary = game.squad[1]
@@ -92,11 +100,59 @@ func _run() -> void:
 	for hit in 10:
 		game._apply_acid_hit(game.target)
 	_check(game.target.acid_duration == 8.0, "repeated acid hits did not cap duration at eight seconds")
-	_check(game.target.health == 60.0, "acid impact damage did not remain weak and constant")
+	_check(game.target.health == 80.0, "acid impact damage did not remain weak and constant")
 	game._update_acid_effects(0.25, [game.target])
-	_check(game.target.health == 58.0, "acid did not apply its fixed tick damage")
+	_check(game.target.health == 79.0, "acid did not apply its reduced fixed tick damage")
 
 	var brood_mother: Dictionary = game.squad[2]
+	game.fresh_flies.clear()
+	game.fresh_fly_swarm.clear()
+	brood_mother.fresh_flies = 6
+	for fly_index in 3:
+		game._add_fresh_fly_to_swarm(brood_mother)
+	for fly in game.fresh_fly_swarm:
+		fly.swarm_time = 5.0
+	game.player.pos = Vector2(900, game.GROUND_Y)
+	brood_mother.pos = Vector2(400, game.GROUND_Y)
+	game.target.pos = Vector2(1100, game.GROUND_Y)
+	game.order = game.Order.FOLLOW
+	game._update_squad(0.1)
+	game._update_fresh_flies(0.1, [game.target, game.scout])
+	var forward_position: float = brood_mother.pos.x
+	var angle_before_reversal: float = game.fresh_fly_swarm_angle
+	game.player.pos = Vector2(500, game.GROUND_Y)
+	game._update_squad(0.1)
+	game._update_fresh_flies(0.1, [game.target, game.scout])
+	_check(brood_mother.pos.x < forward_position and brood_mother.facing < 0.0, "Tiny Brood Mother did not move when reversing to follow the Warden")
+	_check(game.fresh_fly_swarm_angle > angle_before_reversal, "Fresh Fly rotation stopped when the Tiny Brood Mother reversed")
+	game.order = game.Order.ATTACK
+	brood_mother.fresh_fly_launch_cooldown = 0.0
+	game._update_squad(0.0)
+	_check(game.fresh_flies.size() == 1, "a mature Fresh Fly did not launch after the Tiny Brood Mother reversed")
+	_check(game._fresh_fly_reserve_count(brood_mother) == 5, "the Brood Mother counter included a launched Fresh Fly")
+
+	# Exhausting the undeployed brood is a normal terminal inventory state. The
+	# final two flies must keep orbiting and the living Brood Mother must move.
+	game.fresh_flies.clear()
+	game.fresh_fly_swarm.clear()
+	brood_mother.fresh_flies = 0
+	for fly_index in 2:
+		game.fresh_fly_swarm.append({
+			"id": 30 + fly_index,
+			"pos": brood_mother.pos + game.FRESH_FLY_SWARM_CENTER,
+			"swarm_time": 0.0,
+			"facing": -1.0
+		})
+	game.order = game.Order.FOLLOW
+	game.player.pos = Vector2(900, game.GROUND_Y)
+	var two_fly_position: float = brood_mother.pos.x
+	var two_fly_angle: float = game.fresh_fly_swarm_angle
+	game._update_squad(0.1)
+	game._update_fresh_flies(0.1, [game.target, game.scout])
+	_check(brood_mother.pos.x > two_fly_position, "Tiny Brood Mother stopped moving with only two Fresh Flies remaining")
+	_check(game.fresh_fly_swarm_angle > two_fly_angle, "the final two Fresh Flies stopped rotating with no reserves")
+	_check(not game._add_fresh_fly_to_swarm(brood_mother), "an exhausted Fresh Fly reserve accepted an invalid deployment")
+
 	game.fresh_flies.clear()
 	game.fresh_fly_swarm.clear()
 	brood_mother.fresh_flies = 9
@@ -141,12 +197,13 @@ func _run() -> void:
 	game.target.pos = Vector2(700, game.GROUND_Y)
 	game.scout.pos = Vector2(740, game.GROUND_Y)
 	game._explode_fresh_fly(game.target.pos + Vector2(0, -32), [game.target, game.scout])
-	_check(game.target.health == 35.0, "Fresh Fly explosion crossed the target's capture threshold")
-	_check(game.scout.health == 22.0, "Fresh Fly explosion did not damage every enemy in its area")
+	_check(game.target.health == 41.0, "Fresh Fly explosion applied the wrong reduced damage")
+	_check(game.scout.health == 31.0, "Fresh Fly explosion did not apply reduced damage to every enemy in its area")
 
 	game.fresh_flies.clear()
 	game.fresh_fly_swarm.clear()
 	brood_mother.fresh_flies = 8
+	game.target.health = game.target.capture_threshold
 	game.fresh_fly_replacement_cooldown = 3.0
 	game.fresh_flies.append({"id": 20, "pos": brood_mother.pos + Vector2(0, -48), "target": game.target, "returning": false, "facing": 1.0})
 	game._update_fresh_flies(0.01, [game.target, game.scout])
@@ -162,6 +219,9 @@ func _run() -> void:
 	brood_mother.health = 55.0
 	game._damage_squad_member(brood_mother, 5.0, game.target)
 	_check(game.fresh_flies.size() == 3 and game.fresh_fly_swarm.is_empty(), "attacking the Tiny Brood Mother did not launch her whole swarm")
+	game._damage_squad_member(brood_mother, 50.0, game.target)
+	_check(brood_mother.health == 0.0, "lethal damage did not down the Tiny Brood Mother")
+	_check(game.fresh_flies.is_empty() and game.fresh_fly_swarm.is_empty(), "Fresh Flies remained visible after the Tiny Brood Mother was downed")
 
 	game.spit_projectiles.clear()
 	game.player.pos = Vector2(500, game.GROUND_Y)

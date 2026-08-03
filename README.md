@@ -54,7 +54,8 @@ multiple overlapping enemies with one swing. The Acid Spitter seeks ranged
 distance under the Attack order, holds position under Defend, and applies an
 extendable damage-over-time effect with its fixed-arc shot. The Tiny Brood
 Mother carries nine single-use Fresh Flies, with up to three circling above her.
-Flies mature in the swarm for five seconds and launch in arrival order, no more
+The opening swarm fills one fly at a time at three-second intervals. Flies
+mature in the swarm for five seconds and launch in arrival order, no more
 than once every five seconds under Attack. A replacement joins the swarm three
 seconds after a vacancy opens. If the Tiny Brood Mother is struck, every fly in
 her current swarm retaliates immediately. Their explosions damage groups

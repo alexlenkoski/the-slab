@@ -266,6 +266,24 @@ Instead:
 
 ---
 
+# Local Testing
+
+The Godot 4 executable in the development environment is named `godot4`, not
+`godot`.
+
+Run the headless smoke suite with writable, isolated Godot runtime directories:
+
+```bash
+mkdir -p /tmp/the-slab-godot-data /tmp/the-slab-godot-config /tmp/the-slab-godot-cache
+env XDG_DATA_HOME=/tmp/the-slab-godot-data XDG_CONFIG_HOME=/tmp/the-slab-godot-config XDG_CACHE_HOME=/tmp/the-slab-godot-cache godot4 --headless --path . --script tests/smoke_test.gd
+```
+
+The temporary directories avoid crashes when the sandbox prevents Godot from
+writing its normal user-data logs. They do not change the project or the user's
+ordinary Godot settings.
+
+---
+
 # Long-Term Goal
 
 The objective is not simply to create a functional game.
